@@ -123,9 +123,7 @@ export function DropsListing() {
 
                     <div className="featured-drop-panel">
                       <div className="featured-drop-top">
-                        <span className="featured-drop-kicker">
-                          Trending · {i + 1}/{featured.length}
-                        </span>
+                        <span className="featured-drop-kicker">Trending</span>
                         <span className="featured-drop-status">{statusLabel(drop.status)}</span>
                       </div>
 
