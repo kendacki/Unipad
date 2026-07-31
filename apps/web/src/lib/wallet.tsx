@@ -13,7 +13,7 @@ import {
 import { formatUct, normalizeSphereRecipient } from "@unipad/shared";
 import { api } from "./api";
 import { ApiError } from "./errors";
-import { paymentRefFromSendResult, POPUP_SESSION_KEY } from "./sphere";
+import { isSessionJwtExpired, paymentRefFromSendResult, POPUP_SESSION_KEY } from "./sphere";
 import {
   INTENT_ACTIONS,
   connectSphereWallet,
@@ -164,8 +164,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   );
 
   const ensureSphereConnected = useCallback(async () => {
-    if (sphereRef.current && tokenRef.current) {
-      return tokenRef.current;
+    const existingToken = tokenRef.current;
+    const tokenFresh = existingToken && !isSessionJwtExpired(existingToken);
+
+    if (sphereRef.current && tokenFresh) {
+      return existingToken!;
     }
 
     setConnecting(true);
@@ -175,17 +178,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       const pubkey = session.identity.chainPubkey.toLowerCase();
       const existingPrincipal = principalRef.current?.toLowerCase() ?? null;
-      const existingToken = tokenRef.current;
 
-      // Fresh visit or different wallet → full Unipad sign-in.
-      if (!existingToken || !existingPrincipal || existingPrincipal !== pubkey) {
+      // Fresh visit, expired JWT, or different wallet → full Unipad sign-in.
+      if (!tokenFresh || !existingPrincipal || existingPrincipal !== pubkey) {
         return await completeAuth(session);
       }
 
       if (session.identity.nametag) {
         setDisplayName(session.identity.nametag);
       }
-      return existingToken;
+      return existingToken!;
     } catch (err) {
       await clearSphere();
       if (err instanceof ApiError) throw err;
@@ -221,19 +223,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       const to = normalizeSphereRecipient(params.recipient);
 
-      const coinId =
-        params.coinIdHex && /^[0-9a-f]{64}$/i.test(params.coinIdHex)
-          ? params.coinIdHex.toLowerCase()
-          : await resolveUctCoinId(handle.client);
+      try {
+        const coinId =
+          params.coinIdHex && /^[0-9a-f]{64}$/i.test(params.coinIdHex)
+            ? params.coinIdHex.toLowerCase()
+            : await resolveUctCoinId(handle.client);
 
-      const raw = await handle.client.intent(INTENT_ACTIONS.SEND, {
-        to,
-        amount: params.amount,
-        coinId,
-        memo: params.memo,
-      });
+        const raw = await handle.client.intent(INTENT_ACTIONS.SEND, {
+          to,
+          amount: params.amount,
+          coinId,
+          memo: params.memo,
+        });
 
-      return paymentRefFromSendResult(raw, params.memo);
+        return paymentRefFromSendResult(raw, params.memo);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        throw new ApiError(message || "UCT payment failed", {
+          status: 400,
+        });
+      }
     },
     [],
   );

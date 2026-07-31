@@ -52,6 +52,16 @@ const CATALOG: Record<string, ErrorInfo> = {
     title: "Not live yet",
     message: "This collection isn’t open for minting.",
   },
+  UPAD_PAYMENT_REJECTED: {
+    code: "UPAD_PAYMENT_REJECTED",
+    title: "Payment cancelled",
+    message: "You cancelled the UCT payment in Sphere. Tap Mint when you’re ready to try again.",
+  },
+  UPAD_INSUFFICIENT_FUNDS: {
+    code: "UPAD_INSUFFICIENT_FUNDS",
+    title: "Not enough UCT",
+    message: "Your Sphere wallet doesn’t have enough UCT for this mint.",
+  },
   UPAD_PAYMENT_REQUIRED: {
     code: "UPAD_PAYMENT_REQUIRED",
     title: "Payment needed",
@@ -135,6 +145,16 @@ const MESSAGE_TO_CODE: Array<[RegExp | string, string]> = [
   ["Could not connect to Sphere", "UPAD_AUTH_FAILED"],
   ["Reconnect Sphere", "UPAD_UNAUTHORIZED"],
   ["Reconnect Sphere wallet", "UPAD_UNAUTHORIZED"],
+  ["user rejected", "UPAD_PAYMENT_REJECTED"],
+  ["user reject", "UPAD_PAYMENT_REJECTED"],
+  ["rejected by user", "UPAD_PAYMENT_REJECTED"],
+  ["payment cancelled", "UPAD_PAYMENT_REJECTED"],
+  ["payment canceled", "UPAD_PAYMENT_REJECTED"],
+  ["insufficient funds", "UPAD_INSUFFICIENT_FUNDS"],
+  ["insufficient balance", "UPAD_INSUFFICIENT_FUNDS"],
+  ["not enough uct", "UPAD_INSUFFICIENT_FUNDS"],
+  ["Sphere send returned an empty result", "UPAD_PAYMENT_REQUIRED"],
+  ["did not return a transferId", "UPAD_PAYMENT_REQUIRED"],
 ];
 
 export class ApiError extends Error {

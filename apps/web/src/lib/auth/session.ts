@@ -153,7 +153,8 @@ export async function verifyChallenge(nonce: string, signature: string) {
   }
 
   const expiresIn = sessionTtlSeconds();
-  const token = await new SignJWT({ sub: recovered })
+  const principal = recovered.toLowerCase();
+  const token = await new SignJWT({ sub: principal })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${expiresIn}s`)
@@ -161,8 +162,8 @@ export async function verifyChallenge(nonce: string, signature: string) {
 
   return {
     token,
-    chainPubkey: recovered,
+    chainPubkey: principal,
     expiresIn,
-    displayName: `0x${recovered.slice(0, 8)}…${recovered.slice(-4)}`,
+    displayName: `0x${principal.slice(0, 8)}…${principal.slice(-4)}`,
   };
 }

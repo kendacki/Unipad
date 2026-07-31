@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import type { Collection, MintIntentResponse, MintResult } from "@unipad/shared";
 import { api, API_URL } from "@/lib/api";
+import { ApiError } from "@/lib/errors";
 import { dropPriceLabel, isMintable, statusLabel } from "@/lib/drops";
 import { formatLaunchAt } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
@@ -34,6 +35,7 @@ export default function DropDetailPage() {
   const [notFound, setNotFound] = useState(false);
 
   const intentKeyRef = useRef<string | null>(null);
+  const mintLockRef = useRef(false);
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
@@ -64,17 +66,33 @@ export default function DropDetailPage() {
 
   useEffect(() => {
     if (!collection) return;
+    // Live site has no WS backend unless NEXT_PUBLIC_WS_URL points at the API.
+    // Skipping avoids noisy failed sockets against the Next origin on Vercel.
+    const configuredWs = process.env.NEXT_PUBLIC_WS_URL?.trim();
+    if (!configuredWs && /vercel\.app$/i.test(typeof window !== "undefined" ? window.location.hostname : "")) {
+      return;
+    }
     const collectionId = collection.id;
-    const wsBase = process.env.NEXT_PUBLIC_WS_URL ?? API_URL.replace(/^http/, "ws");
+    const wsBase = configuredWs || API_URL.replace(/^http/, "ws");
+    if (!/^wss?:\/\//i.test(wsBase)) return;
     const channels = [`collection:${collectionId}`];
     if (principal) channels.push(`wallet:${principal}`);
-    const url = `${wsBase}/?${channels.map((ch) => `channel=${encodeURIComponent(ch)}`).join("&")}`;
+    const url = `${wsBase.replace(/\/$/, "")}/?${channels
+      .map((ch) => `channel=${encodeURIComponent(ch)}`)
+      .join("&")}`;
     let ws: WebSocket;
     try {
       ws = new WebSocket(url);
     } catch {
       return;
     }
+    ws.onerror = () => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    };
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data as string) as {
@@ -151,16 +169,19 @@ export default function DropDetailPage() {
   );
 
   async function runMint() {
-    if (!collection) return;
+    if (!collection || mintLockRef.current) return;
+    mintLockRef.current = true;
 
     // Sphere Connect does not survive page refresh — JWT might, but the live
     // wallet client does not. Reconnect from this click before any long awaits
     // so the Sphere popup still counts as a user gesture.
     let sessionToken: string;
     try {
+      setStage("ready");
       sessionToken = await ensureSphereConnected();
     } catch (e) {
       toast.error(e);
+      mintLockRef.current = false;
       return;
     }
 
@@ -170,13 +191,29 @@ export default function DropDetailPage() {
       confirmLabel: "Pay & mint",
       cancelLabel: "Cancel",
     });
-    if (!ok) return;
+    if (!ok) {
+      mintLockRef.current = false;
+      return;
+    }
 
     setResult(null);
+    setQueuePosition(null);
     try {
       setStage("intent");
       toast.info("Reserving your spot…");
-      const nextIntent = await api.mintIntent(sessionToken, collection.id);
+
+      let nextIntent;
+      try {
+        nextIntent = await api.mintIntent(sessionToken, collection.id);
+      } catch (err) {
+        // Expired session JWT — re-auth once from the same click chain if Sphere is still live.
+        if (err instanceof ApiError && err.status === 401) {
+          sessionToken = await ensureSphereConnected();
+          nextIntent = await api.mintIntent(sessionToken, collection.id);
+        } else {
+          throw err;
+        }
+      }
       setIntent(nextIntent);
 
       setStage("paying");
@@ -205,13 +242,24 @@ export default function DropDetailPage() {
         setStage("done");
         toast.success("Mint complete", `You got #${mintResult.tokenId}.`);
       } else {
-        setStage("error");
+        setStage("ready");
         toast.error(new Error(mintResult.reason || "Mint failed"));
       }
       refresh();
     } catch (e) {
-      toast.error(e);
-      setStage("error");
+      const info = toast.error(e);
+      // Payment cancel / funds issues should return to a clean retryable state.
+      if (
+        info.code === "UPAD_PAYMENT_REJECTED" ||
+        info.code === "UPAD_INSUFFICIENT_FUNDS" ||
+        info.code === "UPAD_UNAUTHORIZED"
+      ) {
+        setStage("ready");
+      } else {
+        setStage("error");
+      }
+    } finally {
+      mintLockRef.current = false;
     }
   }
 

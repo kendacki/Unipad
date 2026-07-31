@@ -95,8 +95,12 @@ function paymentPath(paymentRef: string) {
 }
 
 function walletTokenPath(principal: string, collectionId: string, tokenId: number) {
-  const safe = encodeURIComponent(principal).slice(0, 120);
+  const safe = encodeURIComponent(principal.toLowerCase()).slice(0, 120);
   return `mints/wallets/${safe}/${collectionId}-${tokenId}.json`;
+}
+
+function normalizePrincipal(principal: string) {
+  return principal.trim().toLowerCase();
 }
 
 async function putJson(pathname: string, data: unknown, opts?: { overwrite?: boolean }) {
@@ -244,6 +248,7 @@ export async function createMintIntent(
   walletPrincipal: string,
   collectionIdOrSlug: string,
 ): Promise<MintIntentResponse> {
+  const principal = normalizePrincipal(walletPrincipal);
   const base = getCatalogCollection(collectionIdOrSlug);
   if (!base) throw new MintHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
 
@@ -262,7 +267,7 @@ export async function createMintIntent(
   const phase = collection.activePhase ?? collection.phases[0];
   if (!phase) throw new MintHttpError("No active mint phase", 400, "UPAD_NO_PHASE");
 
-  const owned = await countOwned(collection.id, walletPrincipal);
+  const owned = await countOwned(collection.id, principal);
   if (owned >= phase.maxPerWallet) {
     throw new MintHttpError("Wallet mint cap reached for this phase", 403, "UPAD_MINT_CAP");
   }
@@ -274,7 +279,7 @@ export async function createMintIntent(
     idempotencyKey,
     collectionId: collection.id,
     phaseId: phase.id,
-    walletPrincipal,
+    walletPrincipal: principal,
     priceUct: phase.priceUct,
     paymentMemo,
     status: "awaiting_payment",
@@ -307,11 +312,12 @@ export async function submitMint(params: {
   idempotencyKey: string;
   paymentRef: string;
 }): Promise<MintResult> {
-  const { walletPrincipal, collectionIdOrSlug, idempotencyKey, paymentRef } = params;
+  const walletPrincipal = normalizePrincipal(params.walletPrincipal);
+  const { collectionIdOrSlug, idempotencyKey, paymentRef } = params;
 
   const intent = await loadIntent(idempotencyKey);
   if (!intent) throw new MintHttpError("Unknown mint intent", 404, "UPAD_NOT_FOUND");
-  if (intent.walletPrincipal !== walletPrincipal) {
+  if (normalizePrincipal(intent.walletPrincipal) !== walletPrincipal) {
     throw new MintHttpError("Intent belongs to another wallet", 403, "UPAD_FORBIDDEN");
   }
   if (intent.status === "confirmed" && intent.tokenId != null) {
@@ -321,6 +327,10 @@ export async function submitMint(params: {
       tokenId: intent.tokenId,
       mintTxRef: intent.mintTxRef,
     };
+  }
+
+  if (intent.expiresAt && Date.parse(intent.expiresAt) < Date.now()) {
+    throw new MintHttpError("Mint intent expired — tap Mint again", 400, "UPAD_VALIDATION");
   }
 
   if (!paymentRef?.trim()) {
@@ -419,7 +429,7 @@ export async function getMintStatus(
 ): Promise<MintResult> {
   const intent = await loadIntent(idempotencyKey);
   if (!intent) throw new MintHttpError("Not found", 404, "UPAD_NOT_FOUND");
-  if (intent.walletPrincipal !== walletPrincipal) {
+  if (normalizePrincipal(intent.walletPrincipal) !== normalizePrincipal(walletPrincipal)) {
     throw new MintHttpError("Forbidden", 403, "UPAD_FORBIDDEN");
   }
   return {
@@ -432,14 +442,15 @@ export async function getMintStatus(
 }
 
 export async function listWalletTokens(principal: string): Promise<StoredToken[]> {
+  const owner = normalizePrincipal(principal);
   if (!useBlob()) {
     return [...memory().tokens.values()]
-      .filter((t) => t.ownerPrincipal === principal)
+      .filter((t) => normalizePrincipal(t.ownerPrincipal) === owner)
       .sort((a, b) => b.mintedAt.localeCompare(a.mintedAt));
   }
-  const safe = encodeURIComponent(principal).slice(0, 120);
+  const safe = encodeURIComponent(owner).slice(0, 120);
   const tokens = await listJsonUnder<StoredToken>(`mints/wallets/${safe}/`);
   return tokens
-    .filter((t) => t.ownerPrincipal === principal)
+    .filter((t) => normalizePrincipal(t.ownerPrincipal) === owner)
     .sort((a, b) => b.mintedAt.localeCompare(a.mintedAt));
 }

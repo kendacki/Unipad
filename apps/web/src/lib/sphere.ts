@@ -40,7 +40,11 @@ export function paymentRefFromSendResult(
   if (!raw || typeof raw !== "object") {
     throw new Error("Sphere send returned an empty result");
   }
-  const r = raw as SendIntentResult;
+  const r = raw as SendIntentResult & { error?: string; code?: string };
+
+  if (typeof r.error === "string" && r.error) {
+    throw new Error(r.error);
+  }
 
   // Money may already have moved — never retry; use memo-bound stable ref
   if (r.deliveryPending === true) {
@@ -51,5 +55,25 @@ export function paymentRefFromSendResult(
     return r.transferId;
   }
 
+  // Some Sphere builds return success without transferId while delivery is pending.
+  if (r.success === true && (r.status === "pending" || r.status === "submitted")) {
+    return `sphere-pending:${memo}`;
+  }
+
   throw new Error("Sphere send did not return a transferId");
+}
+
+/** True when a session JWT is missing or within 60s of expiry. */
+export function isSessionJwtExpired(token: string | null | undefined): boolean {
+  if (!token) return true;
+  try {
+    const part = token.split(".")[1];
+    if (!part) return true;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(json) as { exp?: number };
+    if (typeof payload.exp !== "number") return true;
+    return payload.exp * 1000 <= Date.now() + 60_000;
+  } catch {
+    return true;
+  }
 }
