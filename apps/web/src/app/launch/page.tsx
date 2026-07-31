@@ -4,6 +4,18 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseUct, type PhaseType } from "@unipad/shared";
 import { api } from "@/lib/api";
+import {
+  SCHEDULE_HOURS,
+  SCHEDULE_MINUTES,
+  SCHEDULE_PRESETS,
+  formatLaunchAt,
+  localDateValue,
+  resolveLaunchAt,
+  timezoneHint,
+  upcomingDateOptions,
+  type LaunchMode,
+  type SchedulePreset,
+} from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 
@@ -46,7 +58,7 @@ export default function LaunchPage() {
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [coverUrl, setCoverUrl] = useState(
-    "https://images.unsplash.com/photo-1699524826369-57870e627c43?auto=format&fit=crop&w=1600&q=80",
+    "https://images.unsplash.com/photo-1639628735078-ed2f038a193e?auto=format&fit=crop&w=1600&q=85",
   );
   const [totalSupply, setTotalSupply] = useState(100);
   const [royaltyBps, setRoyaltyBps] = useState(500);
@@ -55,14 +67,36 @@ export default function LaunchPage() {
     { type: "public", name: "Public", priceDisplay: "1", maxPerWallet: 3, enabled: true },
   ]);
   const [allowlistText, setAllowlistText] = useState("");
+  const [launchMode, setLaunchMode] = useState<LaunchMode>("now");
+  const [schedulePreset, setSchedulePreset] = useState<SchedulePreset>("tomorrow_10");
+  const [customDate, setCustomDate] = useState(() => localDateValue(new Date(Date.now() + 86400000)));
+  const [customHour, setCustomHour] = useState(10);
+  const [customMinute, setCustomMinute] = useState(0);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [createdSlug, setCreatedSlug] = useState<string | null>(null);
   const [allowlistPhaseId, setAllowlistPhaseId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
   const steps = ["Basics", "Price", "Guest list", "Check", "Publish"];
+  const dateOptions = useMemo(() => upcomingDateOptions(), []);
+  const tz = useMemo(() => timezoneHint(), []);
 
   const activePhases = useMemo(() => phases.filter((p) => p.enabled), [phases]);
+
+  const previewLaunchAt = useMemo(() => {
+    if (launchMode === "now") return null;
+    try {
+      return resolveLaunchAt({
+        mode: launchMode,
+        preset: schedulePreset,
+        customDate,
+        customHour,
+        customMinute,
+      });
+    } catch {
+      return null;
+    }
+  }, [launchMode, schedulePreset, customDate, customHour, customMinute]);
 
   async function onCoverFile(file: File | null) {
     if (!file) return;
@@ -98,6 +132,22 @@ export default function LaunchPage() {
       return;
     }
 
+    let launchAt: string | null = null;
+    try {
+      launchAt = resolveLaunchAt({
+        mode: launchMode,
+        preset: schedulePreset,
+        customDate,
+        customHour,
+        customMinute,
+      });
+    } catch (e) {
+      toast.error(e);
+      return;
+    }
+
+    const phaseStart = launchAt ?? new Date().toISOString();
+
     let parsedPhases;
     try {
       parsedPhases = activePhases.map((p) => ({
@@ -105,7 +155,7 @@ export default function LaunchPage() {
         name: p.name,
         priceUct: parseUct(p.priceDisplay),
         maxPerWallet: p.maxPerWallet,
-        startsAt: new Date().toISOString(),
+        startsAt: phaseStart,
       }));
     } catch {
       toast.error(new Error("Enter valid UCT prices for enabled phases."));
@@ -122,6 +172,7 @@ export default function LaunchPage() {
         totalSupply,
         royaltyBps,
         coverUrl: coverUrl || undefined,
+        launchAt,
         phases: parsedPhases,
       });
       setCreatedId(created.id);
@@ -153,18 +204,25 @@ export default function LaunchPage() {
     if (!createdId) return;
     const t = sessionToken(token);
     if (!t) return;
+    const scheduled = Boolean(previewLaunchAt);
     const ok = await toast.confirm({
-      title: "Publish this drop?",
-      message: "People will be able to mint as soon as you publish.",
-      confirmLabel: "Publish now",
+      title: scheduled ? "Schedule this drop?" : "Publish this drop?",
+      message: scheduled
+        ? `Minting opens ${formatLaunchAt(previewLaunchAt!)}. It will show as Upcoming until then.`
+        : "People will be able to mint as soon as you publish.",
+      confirmLabel: scheduled ? "Schedule" : "Publish now",
       cancelLabel: "Not yet",
     });
     if (!ok) return;
 
     setSubmitting(true);
     try {
-      await api.publishCollection(t, createdId);
-      toast.success("It’s live!", "Your drop is open for minting.");
+      const published = await api.publishCollection(t, createdId);
+      if (published.status === "scheduled") {
+        toast.success("Scheduled", `Minting opens ${formatLaunchAt(published.launchAt || previewLaunchAt!)}.`);
+      } else {
+        toast.success("It’s live!", "Your drop is open for minting.");
+      }
       router.push(`/drops/${createdSlug}`);
     } catch (e) {
       toast.error(e);
@@ -193,10 +251,13 @@ export default function LaunchPage() {
 
         <p className="step-help">
           {step === 0 && "Start with the basics — name and cover."}
-          {step === 1 && "Choose who can mint and what they pay in UCT."}
+          {step === 1 && "Set price, supply, and when minting should open."}
           {step === 2 && "Optional: paste wallets that can mint early."}
           {step === 3 && "Looks good? Save your drop."}
-          {step === 4 && "Publish when you want minting to open."}
+          {step === 4 &&
+            (previewLaunchAt
+              ? "Confirm to list it as Upcoming until mint opens."
+              : "Publish when you want minting to open.")}
         </p>
         {!token ? (
           <div className="panel glass" style={{ marginBottom: "1rem" }}>
@@ -298,6 +359,91 @@ export default function LaunchPage() {
               <span className="muted">{(royaltyBps / 100).toFixed(2)}% of secondary (stored)</span>
             </label>
 
+            <div className="schedule-block">
+              <label>
+                When should minting open?
+                <select
+                  value={launchMode}
+                  onChange={(e) => setLaunchMode(e.target.value as LaunchMode)}
+                >
+                  <option value="now">As soon as I publish</option>
+                  <option value="schedule">Schedule for later</option>
+                </select>
+                <span className="hint">
+                  Scheduled drops show as Upcoming on Unipad until the start time ({tz}).
+                </span>
+              </label>
+
+              {launchMode === "schedule" ? (
+                <>
+                  <label>
+                    Start time
+                    <select
+                      value={schedulePreset}
+                      onChange={(e) => setSchedulePreset(e.target.value as SchedulePreset)}
+                    >
+                      {SCHEDULE_PRESETS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {schedulePreset === "custom" ? (
+                    <div className="schedule-custom">
+                      <label>
+                        Date
+                        <select value={customDate} onChange={(e) => setCustomDate(e.target.value)}>
+                          {dateOptions.map((d) => (
+                            <option key={d.value} value={d.value}>
+                              {d.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Hour
+                        <select
+                          value={customHour}
+                          onChange={(e) => setCustomHour(Number(e.target.value))}
+                        >
+                          {SCHEDULE_HOURS.map((h) => (
+                            <option key={h.value} value={h.value}>
+                              {h.label.slice(0, 2)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Minute
+                        <select
+                          value={customMinute}
+                          onChange={(e) => setCustomMinute(Number(e.target.value))}
+                        >
+                          {SCHEDULE_MINUTES.map((m) => (
+                            <option key={m.value} value={m.value}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {previewLaunchAt ? (
+                    <p className="schedule-preview">
+                      Mint opens <strong>{formatLaunchAt(previewLaunchAt)}</strong>
+                    </p>
+                  ) : (
+                    <p className="hint" style={{ margin: 0 }}>
+                      Pick a time at least 1 minute from now.
+                    </p>
+                  )}
+                </>
+              ) : null}
+            </div>
+
             {phases.map((p, idx) => (
               <div
                 key={p.type}
@@ -362,8 +508,16 @@ export default function LaunchPage() {
               <button
                 type="button"
                 className="btn btn-signal"
-                disabled={!activePhases.length}
-                onClick={() => setStep(activePhases.some((p) => p.type === "allowlist") ? 2 : 3)}
+                disabled={
+                  !activePhases.length || (launchMode === "schedule" && !previewLaunchAt)
+                }
+                onClick={() => {
+                  if (launchMode === "schedule" && !previewLaunchAt) {
+                    toast.error(new Error("Pick a valid schedule time."));
+                    return;
+                  }
+                  setStep(activePhases.some((p) => p.type === "allowlist") ? 2 : 3);
+                }}
               >
                 {activePhases.some((p) => p.type === "allowlist") ? "Allowlist" : "Review"}
               </button>
@@ -417,6 +571,11 @@ export default function LaunchPage() {
                 Early-access wallets: {allowlistText.split(/[\n,]+/).filter((w) => w.trim()).length}
               </p>
             ) : null}
+            <p className="schedule-preview" style={{ margin: 0 }}>
+              {previewLaunchAt
+                ? `Scheduled · mint opens ${formatLaunchAt(previewLaunchAt)}`
+                : "Opens as soon as you publish"}
+            </p>
             <p style={{ margin: 0, lineHeight: 1.55 }}>{description || "No description"}</p>
             <div style={{ display: "flex", gap: "0.5rem" }}>
               <button
@@ -441,11 +600,12 @@ export default function LaunchPage() {
         {step === 4 ? (
           <div className="panel glass form-grid">
             <h3 className="display" style={{ fontSize: "1.5rem" }}>
-              Ready to publish?
+              {previewLaunchAt ? "Ready to schedule?" : "Ready to publish?"}
             </h3>
             <p className="muted" style={{ margin: 0 }}>
-              Publishing opens active phases. Mint payments settle in UCT to the treasury; creators
-              accrue net proceeds after the platform fee.
+              {previewLaunchAt
+                ? `This drop will list as Upcoming until ${formatLaunchAt(previewLaunchAt)}, then minting opens automatically.`
+                : "Publishing opens active phases. Mint payments settle in UCT to the treasury; creators accrue net proceeds after the platform fee."}
               {allowlistPhaseId ? " Allowlist entries are saved." : ""}
             </p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -455,7 +615,13 @@ export default function LaunchPage() {
                 disabled={submitting}
                 onClick={publish}
               >
-                {submitting ? "Publishing…" : "Publish"}
+                {submitting
+                  ? previewLaunchAt
+                    ? "Scheduling…"
+                    : "Publishing…"
+                  : previewLaunchAt
+                    ? "Schedule drop"
+                    : "Publish"}
               </button>
               {createdSlug ? (
                 <button

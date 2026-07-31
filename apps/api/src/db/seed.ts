@@ -19,6 +19,9 @@ type DropSeed = {
 };
 
 /** Homepage / listing sample drops with real-sounding collection + creator names */
+const COVER_HD = "auto=format&fit=crop&w=1200&q=85";
+const cover = (id: string) => `https://images.unsplash.com/photo-${id}?${COVER_HD}`;
+
 const DROP_DEFS: DropSeed[] = [
   {
     slug: "signal-001",
@@ -28,8 +31,7 @@ const DROP_DEFS: DropSeed[] = [
     creatorName: "North Signal Studio",
     priceUct: "1",
     supply: 100,
-    coverUrl:
-      "https://images.unsplash.com/photo-1699524826369-57870e627c43?auto=format&fit=crop&w=800&q=75",
+    coverUrl: cover("1699524826369-57870e627c43"),
   },
   {
     slug: "orbit-pulse",
@@ -39,8 +41,7 @@ const DROP_DEFS: DropSeed[] = [
     creatorName: "Mira Vale",
     priceUct: null,
     supply: 64,
-    coverUrl:
-      "https://images.unsplash.com/photo-1592561199818-6b69d3d1d6e2?auto=format&fit=crop&w=800&q=75",
+    coverUrl: cover("1636622433525-127afdf3662d"),
   },
   {
     slug: "north-flare",
@@ -50,8 +51,7 @@ const DROP_DEFS: DropSeed[] = [
     creatorName: "Lumen Collective",
     priceUct: null,
     supply: 88,
-    coverUrl:
-      "https://images.unsplash.com/photo-1637858868799-7f26a0640eb6?auto=format&fit=crop&w=800&q=75",
+    coverUrl: cover("1638803040283-7a5ffd48dad5"),
   },
   {
     slug: "amber-relay",
@@ -61,8 +61,7 @@ const DROP_DEFS: DropSeed[] = [
     creatorName: "Kai Rostova",
     priceUct: null,
     supply: 120,
-    coverUrl:
-      "https://images.unsplash.com/photo-1628260412297-a3377e45006f?auto=format&fit=crop&w=800&q=75",
+    coverUrl: cover("1639503611585-1054af5dbfab"),
   },
   {
     slug: "glass-harbor",
@@ -72,8 +71,7 @@ const DROP_DEFS: DropSeed[] = [
     creatorName: "Harbor Atelier",
     priceUct: null,
     supply: 75,
-    coverUrl:
-      "https://images.unsplash.com/photo-1639628735078-ed2f038a193e?auto=format&fit=crop&w=800&q=75",
+    coverUrl: cover("1728729729215-00ae703063ff"),
   },
   {
     slug: "ember-kit",
@@ -83,8 +81,47 @@ const DROP_DEFS: DropSeed[] = [
     creatorName: "Jun Park",
     priceUct: null,
     supply: 50,
-    coverUrl:
-      "https://images.unsplash.com/photo-1620428268482-cf1851a36764?auto=format&fit=crop&w=800&q=75",
+    coverUrl: cover("1740252117012-bb53ad05e370"),
+  },
+  {
+    slug: "private-circuit",
+    name: "Private Circuit",
+    description: "Curated edition by Elena Moss — mint with UCT on Unipad.",
+    creatorPrincipal: "mock_creator_elena_moss",
+    creatorName: "Elena Moss",
+    priceUct: null,
+    supply: 40,
+    coverUrl: cover("1740252117013-4fb21771e7ca"),
+  },
+  {
+    slug: "volt-mascot",
+    name: "Volt Mascot",
+    description: "Electric softforms by Rio Quinn — fair mint on Unicity.",
+    creatorPrincipal: "mock_creator_rio_quinn",
+    creatorName: "Rio Quinn",
+    priceUct: null,
+    supply: 96,
+    coverUrl: cover("1740252117027-4275d3f84385"),
+  },
+  {
+    slug: "nova-trinket",
+    name: "Nova Trinket",
+    description: "Playful fiends by Sol Varga — mint in UCT on Unipad.",
+    creatorPrincipal: "mock_creator_sol_varga",
+    creatorName: "Sol Varga",
+    priceUct: null,
+    supply: 72,
+    coverUrl: cover("1759950616527-15c2818f2f3c"),
+  },
+  {
+    slug: "moss-guard",
+    name: "Moss Guard",
+    description: "Wall-peek guardians by Ivy Chen — live mint with UCT.",
+    creatorPrincipal: "mock_creator_ivy_chen",
+    creatorName: "Ivy Chen",
+    priceUct: null,
+    supply: 60,
+    coverUrl: cover("1759950616453-4f4a161c0c8d"),
   },
 ];
 
@@ -204,6 +241,24 @@ async function cleanupPlaceholderDrops() {
   );
 }
 
+/** Ensure the top public drops each get a distinct HD cartoon cover. */
+async function refreshPublicCovers() {
+  const covers = DROP_DEFS.map((d) => d.coverUrl);
+  const { rows } = await query<{ id: string }>(
+    `SELECT id FROM collections
+     WHERE status IN ('live', 'scheduled', 'sold_out', 'ended')
+     ORDER BY COALESCE(launch_at, created_at) DESC
+     LIMIT $1`,
+    [covers.length],
+  );
+  for (let i = 0; i < rows.length; i++) {
+    await query(`UPDATE collections SET cover_url = $2, updated_at = now() WHERE id = $1`, [
+      rows[i].id,
+      covers[i],
+    ]);
+  }
+}
+
 async function seed() {
   await cleanupPlaceholderDrops();
 
@@ -220,6 +275,8 @@ async function seed() {
       price,
     });
   }
+
+  await refreshPublicCovers();
 
   console.log("Seeded / updated drops:");
   for (const r of results) {

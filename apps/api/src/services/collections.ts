@@ -26,6 +26,23 @@ async function loadPhases(collectionId: string) {
   return rows.map(mapPhase);
 }
 
+/** Flip due scheduled drops to live so storefront/mint stay accurate without a cron. */
+export async function activateDueCollections() {
+  const { rows } = await query<{ id: string }>(
+    `UPDATE collections
+     SET status = 'live', updated_at = now()
+     WHERE status = 'scheduled'
+       AND launch_at IS NOT NULL
+       AND launch_at <= now()
+     RETURNING id`,
+  );
+  for (const row of rows) {
+    const mapped = await loadCollectionByIdOrSlug(row.id);
+    if (mapped) bus.publish(`collection:${row.id}`, { type: "phase.changed", collection: mapped });
+  }
+  return rows.length;
+}
+
 async function loadCollectionByIdOrSlug(idOrSlug: string) {
   const { rows } = await query<CollectionRow>(
     `SELECT c.*, COALESCE(cr.display_name, '') AS creator_display_name
@@ -42,6 +59,7 @@ async function loadCollectionByIdOrSlug(idOrSlug: string) {
 }
 
 export async function listCollections(status?: string) {
+  await activateDueCollections();
   const params: unknown[] = [];
   let where = `WHERE c.status IN ('live', 'scheduled', 'sold_out', 'ended')`;
   if (status) {
@@ -64,6 +82,7 @@ export async function listCollections(status?: string) {
 }
 
 export async function getCollection(idOrSlug: string) {
+  await activateDueCollections();
   return loadCollectionByIdOrSlug(idOrSlug);
 }
 
@@ -111,7 +130,7 @@ export async function createCollection(principal: string, input: CreateCollectio
         input.description,
         principal,
         input.coverUrl ?? null,
-        input.launchAt ? "scheduled" : "draft",
+        "draft",
         input.totalSupply,
         input.royaltyBps,
         input.launchAt ?? null,
@@ -164,8 +183,14 @@ export async function createCollection(principal: string, input: CreateCollectio
 export async function publishCollection(principal: string, id: string) {
   const { rows } = await query<CollectionRow>(
     `UPDATE collections
-     SET status = 'live', launch_at = COALESCE(launch_at, now()), updated_at = now()
-     WHERE id = $1 AND creator_principal = $2
+     SET
+       launch_at = COALESCE(launch_at, now()),
+       status = CASE
+         WHEN COALESCE(launch_at, now()) > now() THEN 'scheduled'
+         ELSE 'live'
+       END,
+       updated_at = now()
+     WHERE id = $1 AND creator_principal = $2 AND status IN ('draft', 'scheduled')
      RETURNING *, '' AS creator_display_name`,
     [id, principal],
   );
@@ -354,10 +379,16 @@ export async function createMintIntent(
   walletPrincipal: string,
   collectionIdOrSlug: string,
 ): Promise<MintIntentResponse> {
+  await activateDueCollections();
   const collection = await loadCollectionByIdOrSlug(collectionIdOrSlug);
   if (!collection) throw Object.assign(new Error("Collection not found"), { status: 404 });
-  if (collection.status !== "live" && collection.status !== "scheduled") {
-    throw Object.assign(new Error("Collection is not mintable"), { status: 400 });
+  if (collection.status !== "live") {
+    throw Object.assign(
+      new Error(
+        collection.status === "scheduled" ? "Minting has not opened yet" : "Collection is not mintable",
+      ),
+      { status: 400 },
+    );
   }
   if (collection.remainingSupply <= 0) {
     throw Object.assign(new Error("Sold out"), { status: 409 });

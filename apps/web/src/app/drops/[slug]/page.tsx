@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import type { Collection, MintIntentResponse, MintResult } from "@unipad/shared";
 import { api, API_URL } from "@/lib/api";
 import { dropPriceLabel, isMintable, statusLabel } from "@/lib/drops";
+import { formatLaunchAt } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { DROP_DETAIL_FALLBACKS } from "@/lib/media";
@@ -362,7 +363,11 @@ export default function DropDetailPage() {
                     : `Mint · ${priceLabel}`}
         </button>
 
-        <p className="hint">Pay with UCT first — then we confirm your NFT.</p>
+        {collection.status === "scheduled" && collection.launchAt ? (
+          <p className="hint">Minting opens {formatLaunchAt(collection.launchAt)}.</p>
+        ) : (
+          <p className="hint">Pay with UCT first — then we confirm your NFT.</p>
+        )}
       </div>
     </section>
   );

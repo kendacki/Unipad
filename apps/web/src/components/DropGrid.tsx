@@ -17,36 +17,48 @@ import {
 
 type Props = {
   limit?: number;
-  /** Show Live / Upcoming / All filters (listing page) */
   filterable?: boolean;
-  /** Default filter when filterable */
   defaultFilter?: DropFilter;
+  excludeId?: string;
+  excludeIds?: string[];
+  /** Shared list from parent (avoids a second fetch on /drops) */
+  collections?: Collection[] | null;
+  error?: string | null;
 };
 
 export function DropGrid({
   limit,
   filterable = false,
   defaultFilter = "mintable",
+  excludeId,
+  excludeIds,
+  collections: collectionsProp,
+  error: errorProp,
 }: Props) {
-  const [collections, setCollections] = useState<Collection[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [collectionsLocal, setCollectionsLocal] = useState<Collection[] | null>(null);
+  const [errorLocal, setErrorLocal] = useState<string | null>(null);
   const [filter, setFilter] = useState<DropFilter>(defaultFilter);
 
+  const controlled = collectionsProp !== undefined;
+  const collections = controlled ? collectionsProp : collectionsLocal;
+  const error = controlled ? (errorProp ?? null) : errorLocal;
+
   useEffect(() => {
+    if (controlled) return;
     let cancelled = false;
     api
       .listCollections()
       .then((r) => {
         if (cancelled) return;
-        setCollections(sortForStorefront(r.collections));
+        setCollectionsLocal(sortForStorefront(r.collections));
       })
       .catch((e) => {
-        if (!cancelled) setError(e.message);
+        if (!cancelled) setErrorLocal(e.message);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [controlled]);
 
   const counts = useMemo(() => {
     if (!collections) return { mintable: 0, upcoming: 0, all: 0 };
@@ -62,8 +74,12 @@ export function DropGrid({
     const filtered = filterable
       ? collections.filter((c) => matchesFilter(c, filter))
       : collections.filter((c) => matchesFilter(c, defaultFilter));
-    return limit ? filtered.slice(0, limit) : filtered;
-  }, [collections, filter, filterable, limit, defaultFilter]);
+    const skip = new Set([...(excludeIds ?? []), ...(excludeId ? [excludeId] : [])]);
+    const withoutFeatured = skip.size
+      ? filtered.filter((c) => !skip.has(c.id))
+      : filtered;
+    return limit ? withoutFeatured.slice(0, limit) : withoutFeatured;
+  }, [collections, filter, filterable, limit, defaultFilter, excludeId, excludeIds]);
 
   if (error) return <div className="flash error">{error}</div>;
   if (!collections) {
@@ -147,10 +163,14 @@ export function DropGrid({
                   <span className="supply-fill" style={{ width: `${mintedPct}%` }} />
                 </div>
                 <div className="drop-footer">
-                  <span className="muted">
+                  <span className="muted drop-supply">
                     {c.remainingSupply} of {c.totalSupply} left
                   </span>
-                  <span className={mintable ? "drop-cta" : "muted"}>
+                  <span
+                    className={
+                      mintable ? "btn btn-primary drop-mint-btn" : "btn btn-ghost drop-mint-btn"
+                    }
+                  >
                     {mintable ? "Mint" : c.status === "scheduled" ? "Soon" : "View"}
                   </span>
                 </div>

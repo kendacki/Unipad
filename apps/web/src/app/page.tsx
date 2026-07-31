@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { DropGrid } from "@/components/DropGrid";
-import { CARTOON_CHARACTERS } from "@/lib/media";
 
 export const metadata: Metadata = {
   title: "Unipad — Launch & mint NFTs on Unicity",
@@ -19,29 +18,29 @@ export default function HomePage() {
   return (
     <>
       <section className="hero">
-        <div className="hero-media" aria-hidden />
+        <div className="hero-media" aria-hidden>
+          <Image
+            src="/hero-bg.webp"
+            alt=""
+            fill
+            priority
+            quality={100}
+            sizes="100vw"
+            unoptimized
+            style={{ objectFit: "cover", objectPosition: "left center" }}
+          />
+        </div>
         <div className="shell hero-layout">
-          <div className="hero-character" aria-hidden>
-            <Image
-              src={CARTOON_CHARACTERS.hoodieAvatar}
-              alt=""
-              width={840}
-              height={980}
-              priority
-              sizes="(max-width: 860px) 70vw, 420px"
-              style={{ width: "100%", height: "auto" }}
-            />
-          </div>
           <div className="hero-content">
             <div className="hero-brand">
               Uni<em>pad</em>
             </div>
             <p>Launch an NFT drop or mint one with UCT. Fair minting — no gas wars.</p>
             <div className="hero-actions">
-              <Link href="/drops" className="btn btn-signal">
+              <Link href="/drops" className="btn btn-primary">
                 Mint an NFT
               </Link>
-              <Link href="/launch" className="btn btn-ghost on-dark">
+              <Link href="/launch" className="btn btn-ghost on-orange">
                 Create a drop
               </Link>
             </div>
