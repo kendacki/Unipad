@@ -17,16 +17,23 @@ export async function GET(request: Request, ctx: Ctx) {
   }
   const nametag = new URL(request.url).searchParams.get("nametag");
   const tokens = await listWalletTokens(decodeURIComponent(principal), { nametag });
-  return NextResponse.json({
-    tokens: tokens.map((t) => ({
-      collectionId: t.collectionId,
-      collectionName: t.collectionName,
-      slug: t.slug,
-      coverUrl: t.coverUrl,
-      tokenId: t.tokenId,
-      mintTxRef: t.mintTxRef,
-      mintedAt: t.mintedAt,
-      ownerPrincipal: t.ownerPrincipal,
-    })),
-  });
+  return NextResponse.json(
+    {
+      tokens: tokens.map((t) => ({
+        collectionId: t.collectionId,
+        collectionName: t.collectionName,
+        slug: t.slug,
+        coverUrl: t.coverUrl,
+        tokenId: t.tokenId,
+        mintTxRef: t.mintTxRef,
+        mintedAt: t.mintedAt,
+        ownerPrincipal: t.ownerPrincipal,
+      })),
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    },
+  );
 }

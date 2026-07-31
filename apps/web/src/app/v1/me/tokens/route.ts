@@ -17,19 +17,26 @@ export async function GET(request: Request) {
       nametag,
       forceScan: true,
     });
-    return NextResponse.json({
-      principal: session.principal,
-      tokens: tokens.map((t) => ({
-        collectionId: t.collectionId,
-        collectionName: t.collectionName,
-        slug: t.slug,
-        coverUrl: t.coverUrl,
-        tokenId: t.tokenId,
-        mintTxRef: t.mintTxRef,
-        mintedAt: t.mintedAt,
-        ownerPrincipal: t.ownerPrincipal,
-      })),
-    });
+    return NextResponse.json(
+      {
+        principal: session.principal,
+        tokens: tokens.map((t) => ({
+          collectionId: t.collectionId,
+          collectionName: t.collectionName,
+          slug: t.slug,
+          coverUrl: t.coverUrl,
+          tokenId: t.tokenId,
+          mintTxRef: t.mintTxRef,
+          mintedAt: t.mintedAt,
+          ownerPrincipal: t.ownerPrincipal,
+        })),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      },
+    );
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: 401 });

@@ -8,7 +8,7 @@ import { cachedMintsFor, rememberMint, removeCachedMint } from "@/lib/mintCache"
 import { useToast } from "@/lib/toast";
 import { shortPrincipal, useWallet } from "@/lib/wallet";
 import { DROP_COVER_FALLBACKS } from "@/lib/media";
-import { cardItem, fadeUp, springSnappy, staggerFast } from "@/lib/motion";
+import { fadeUp, springSnappy } from "@/lib/motion";
 
 type TokenRow = {
   collectionId: string;
@@ -21,21 +21,14 @@ type TokenRow = {
   ownerPrincipal?: string;
 };
 
-function nametagQuery(displayName: string | null): string | null {
-  if (!displayName) return null;
-  const t = displayName.trim();
-  if (!t || t.startsWith("0x") || t.includes("…") || t.includes("...")) return null;
-  if (/^[0-9a-f]{64,66}$/i.test(t)) return null;
-  return t;
-}
-
-/** Prefer JWT `sub` — source of truth for mint ownership. */
 function principalFromJwt(jwt: string | null): string | null {
   if (!jwt) return null;
   try {
     const part = jwt.split(".")[1];
     if (!part) return null;
-    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const padded = part.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = padded.length % 4 === 0 ? "" : "=".repeat(4 - (padded.length % 4));
+    const json = atob(padded + pad);
     const payload = JSON.parse(json) as { sub?: string };
     return typeof payload.sub === "string" ? payload.sub.trim().toLowerCase() : null;
   } catch {
@@ -43,10 +36,13 @@ function principalFromJwt(jwt: string | null): string | null {
   }
 }
 
-function mergeRows(a: TokenRow[], b: TokenRow[]): TokenRow[] {
+function mergeRows(...lists: TokenRow[][]): TokenRow[] {
   const map = new Map<string, TokenRow>();
-  for (const row of [...b, ...a]) {
-    map.set(`${row.collectionId}:${row.tokenId}`, row);
+  for (const list of lists) {
+    for (const row of list) {
+      if (!row?.collectionId || row.tokenId == null) continue;
+      map.set(`${row.collectionId}:${row.tokenId}`, row);
+    }
   }
   return [...map.values()].sort((x, y) => y.mintedAt.localeCompare(x.mintedAt));
 }
@@ -67,63 +63,57 @@ export default function WalletPage() {
   }, [token, principal]);
 
   const refresh = useCallback(async () => {
-    if (!token || !sessionPrincipal) return;
+    if (!sessionPrincipal) return;
     setLoading(true);
     setLoadError(null);
-    const nametag = nametagQuery(displayName);
+
     const local = cachedMintsFor(sessionPrincipal);
+    const remoteLists: TokenRow[][] = [];
+    let lastError: string | null = null;
 
-    let remote: TokenRow[] = [];
-    const errors: string[] = [];
-
+    // Public inventory (proven path for this mint) — always try first, no nametag filter.
     try {
-      const r = await api.myTokens(token, nametag);
-      remote = r.tokens;
-      for (const t of r.tokens) {
-        rememberMint({
-          ...t,
-          ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
-        });
-      }
+      const r = await api.walletTokens(sessionPrincipal);
+      remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
     } catch (e) {
-      errors.push(e instanceof Error ? e.message : "Session mint list failed");
+      lastError = e instanceof Error ? e.message : "Could not load mints";
+    }
+
+    // Authenticated list as a second source (merge, never replace).
+    if (token) {
       try {
-        const r = await api.walletTokens(sessionPrincipal, nametag);
-        remote = r.tokens;
-        for (const t of r.tokens) {
-          rememberMint({
-            ...t,
-            ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
-          });
-        }
-      } catch (e2) {
-        errors.push(e2 instanceof Error ? e2.message : "Wallet mint list failed");
-        // Last resort: public list without nametag (avoids bad nametag filter)
-        try {
-          const r = await api.walletTokens(sessionPrincipal);
-          remote = r.tokens;
-        } catch (e3) {
-          errors.push(e3 instanceof Error ? e3.message : "Public mint list failed");
-        }
+        const r = await api.myTokens(token);
+        remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
+      } catch {
+        /* public list is enough */
       }
     }
 
-    const merged = mergeRows(remote, local);
-    setTokens(merged);
-    if (!merged.length && errors.length) {
-      setLoadError(errors[0] ?? "Could not load mints");
+    const merged = mergeRows(...remoteLists, local);
+    for (const t of merged) {
+      rememberMint({
+        collectionId: t.collectionId,
+        collectionName: t.collectionName,
+        slug: t.slug,
+        coverUrl: t.coverUrl,
+        tokenId: t.tokenId,
+        mintTxRef: t.mintTxRef,
+        mintedAt: t.mintedAt,
+        ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
+      });
     }
+
+    setTokens(merged);
+    if (!merged.length && lastError) setLoadError(lastError);
     setLoading(false);
-  }, [token, sessionPrincipal, displayName]);
+  }, [token, sessionPrincipal]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    const onFocus = () => {
-      void refresh();
-    };
+    const onFocus = () => void refresh();
     window.addEventListener("focus", onFocus);
     const onVis = () => {
       if (document.visibilityState === "visible") onFocus();
@@ -156,7 +146,6 @@ export default function WalletPage() {
             collectionId: row.collectionId,
             tokenId: row.tokenId,
             to,
-            nametag: nametagQuery(displayName),
           });
           return true;
         } finally {
@@ -220,15 +209,13 @@ export default function WalletPage() {
       transition={{ duration: 0.4 }}
     >
       <div className="shell">
-        <m.div className="section-head" variants={fadeUp} initial="hidden" animate="show">
+        <div className="section-head">
           <div>
             <h2>My mints</h2>
             <p>
-              {displayName ? `${displayName} · ` : ""}
-              {shortPrincipal(sessionPrincipal)}
-            </p>
-            <p className="hint" style={{ marginTop: 6, maxWidth: 40 * 16 }}>
-              Wallet id: <code style={{ fontSize: "0.75rem", wordBreak: "break-all" }}>{sessionPrincipal}</code>
+              {displayName && !/^[0-9a-f]{64,66}$/i.test(displayName)
+                ? displayName
+                : shortPrincipal(sessionPrincipal)}
             </p>
           </div>
           <button
@@ -239,47 +226,37 @@ export default function WalletPage() {
           >
             {loading ? "Refreshing…" : "Refresh"}
           </button>
-        </m.div>
+        </div>
 
         {loadError ? (
           <div className="flash" style={{ marginBottom: "1rem" }}>
-            {loadError} — tap Refresh. Use the same Sphere wallet you minted with.
+            {loadError} — tap Refresh.
           </div>
         ) : null}
 
         {!tokens.length ? (
-          <m.div className="flash glass" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <div className="flash glass">
             {loading ? (
               "Loading your mints…"
             ) : (
               <>
-                No mints for this wallet yet.{" "}
+                No mints yet.{" "}
                 <Link href="/drops" style={{ textDecoration: "underline", color: "var(--orange)" }}>
                   Browse drops
                 </Link>
-                . If you already minted, reconnect the same Sphere account and tap Refresh.
+                .
               </>
             )}
-          </m.div>
+          </div>
         ) : (
-          <m.div
-            className="grid-drops"
-            variants={staggerFast}
-            initial="hidden"
-            animate="show"
-          >
+          <div className="grid-drops">
             {tokens.map((t) => {
               const key = `${t.collectionId}:${t.tokenId}`;
               const busy = sendingKey === key;
               const cover =
                 t.coverUrl || DROP_COVER_FALLBACKS[t.tokenId % DROP_COVER_FALLBACKS.length];
               return (
-                <m.div
-                  key={key}
-                  className="drop-tile mint-owned"
-                  variants={cardItem}
-                  whileHover={{ y: -4 }}
-                >
+                <div key={key} className="drop-tile mint-owned">
                   <Link href={`/drops/${t.slug}`} className="drop-media">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={cover} alt="" loading="lazy" />
@@ -320,10 +297,10 @@ export default function WalletPage() {
                       Send to another Sphere @nametag or their 66-char chain pubkey.
                     </p>
                   </div>
-                </m.div>
+                </div>
               );
             })}
-          </m.div>
+          </div>
         )}
       </div>
     </m.section>

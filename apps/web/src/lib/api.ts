@@ -33,12 +33,15 @@ async function request<T>(
   init: RequestInit & { token?: string; json?: boolean } = {},
 ): Promise<T> {
   const { token, headers, json = true, ...rest } = init;
+  const method = String(rest.method || "GET").toUpperCase();
+  const sendJsonHeader = json && method !== "GET" && method !== "HEAD";
   let res: Response;
   try {
     res = await fetch(`${apiUrl()}${path}`, {
+      cache: "no-store",
       ...rest,
       headers: {
-        ...(json ? { "Content-Type": "application/json" } : {}),
+        ...(sendJsonHeader ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
@@ -160,7 +163,10 @@ export const api = {
       body: JSON.stringify({ nonce, signature }),
     }),
   walletTokens: (principal: string, nametag?: string | null) => {
-    const q = nametag ? `?nametag=${encodeURIComponent(nametag)}` : "";
+    const params = new URLSearchParams();
+    if (nametag) params.set("nametag", nametag);
+    params.set("_", String(Date.now()));
+    const q = `?${params.toString()}`;
     return request<{
       tokens: Array<{
         collectionId: string;
@@ -176,7 +182,10 @@ export const api = {
   },
   /** Prefer for My mints — uses the session JWT principal (avoids client principal drift). */
   myTokens: (token: string, nametag?: string | null) => {
-    const q = nametag ? `?nametag=${encodeURIComponent(nametag)}` : "";
+    const params = new URLSearchParams();
+    if (nametag) params.set("nametag", nametag);
+    params.set("_", String(Date.now()));
+    const q = `?${params.toString()}`;
     return request<{
       principal: string;
       tokens: Array<{
