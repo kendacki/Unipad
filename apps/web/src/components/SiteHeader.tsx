@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { m } from "framer-motion";
 import { IconPortrait, LogoMark } from "@/components/Icons";
 import { useToast } from "@/lib/toast";
@@ -9,7 +10,10 @@ import { slideDown, springSnappy } from "@/lib/motion";
 
 export function SiteHeader() {
   const toast = useToast();
+  const pathname = usePathname();
   const { token, principal, displayName, connecting, connectSphere, disconnect } = useWallet();
+  /** Drop detail / mint pages — e.g. /drops/nova-trinket */
+  const onMintPage = /^\/drops\/[^/]+\/?$/.test(pathname || "");
 
   async function onConnect() {
     try {
@@ -59,7 +63,7 @@ export function SiteHeader() {
               </m.div>
               <m.button
                 type="button"
-                className="btn btn-ghost"
+                className={onMintPage ? "btn btn-primary" : "btn btn-ghost"}
                 whileHover={{ y: -1 }}
                 whileTap={{ scale: 0.98 }}
                 transition={springSnappy}
