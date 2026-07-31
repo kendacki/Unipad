@@ -12,6 +12,7 @@ import { dropPriceLabel, isMintable, statusLabel } from "@/lib/drops";
 import { formatLaunchAt } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
+import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { DROP_DETAIL_FALLBACKS } from "@/lib/media";
 import { fadeUp, scaleIn, springSnappy } from "@/lib/motion";
 
@@ -20,8 +21,15 @@ type Stage = "ready" | "intent" | "paying" | "queued" | "minting" | "done" | "er
 export default function DropDetailPage() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
-  const { token, principal, ensureSphereConnected, connecting, payUct, sphereReady } =
-    useWallet();
+  const {
+    token,
+    principal,
+    ensureSphereConnected,
+    ensureSphereForPayment,
+    connecting,
+    payUct,
+    sphereReady,
+  } = useWallet();
   const toast = useToast();
 
   const [collection, setCollection] = useState<Collection | null>(null);
@@ -210,23 +218,36 @@ export default function DropDetailPage() {
 
     // Sphere send UI must start inside the confirm-button click — not after
     // mint-intent awaits — or Chrome blocks the wallet popup and we hang at 48%.
+    // Closing the Sphere window after Connect also kills send; Pay reopens it.
     let paymentRef: string | null;
     try {
       paymentRef = await toast.confirmAndRun({
         title: `Mint for ${priceLabel}?`,
         message:
-          "Approve the UCT payment in Sphere. We’ll finish your mint right after you confirm.",
+          "Tap Pay to open Sphere and approve the UCT transfer. Keep the Sphere wallet window open until you confirm.",
         confirmLabel: "Pay with Sphere",
         cancelLabel: "Cancel",
         run: () => {
+          // Sync under this click — reopen/focus Sphere before any await.
+          try {
+            prepareSpherePaymentWindow();
+          } catch {
+            /* ensureSphereForPayment will surface a clear error */
+          }
           setStage("paying");
-          toast.info("Approve UCT in Sphere…");
-          return payUct({
-            recipient: nextIntent.payment.recipient,
-            amount: nextIntent.payment.amount,
-            memo: nextIntent.payment.memo,
-            coinIdHex: nextIntent.payment.coinIdHex,
-          });
+          toast.info(
+            "Approve UCT in Sphere",
+            "Look at the Sphere wallet window (or extension) and confirm. Keep it open.",
+          );
+          return (async () => {
+            await ensureSphereForPayment();
+            return payUct({
+              recipient: nextIntent.payment.recipient,
+              amount: nextIntent.payment.amount,
+              memo: nextIntent.payment.memo,
+              coinIdHex: nextIntent.payment.coinIdHex,
+            });
+          })();
         },
       });
     } catch (e) {
@@ -234,7 +255,8 @@ export default function DropDetailPage() {
       if (
         info.code === "UPAD_PAYMENT_REJECTED" ||
         info.code === "UPAD_INSUFFICIENT_FUNDS" ||
-        info.code === "UPAD_UNAUTHORIZED"
+        info.code === "UPAD_UNAUTHORIZED" ||
+        info.code === "UPAD_PAYMENT_TIMEOUT"
       ) {
         setStage("ready");
       } else {
@@ -435,6 +457,13 @@ export default function DropDetailPage() {
             </m.div>
           ) : null}
         </AnimatePresence>
+
+        {stage === "paying" ? (
+          <div className="flash">
+            Waiting on Sphere — approve the UCT payment in the Sphere wallet window or extension.
+            Keep that window open.
+          </div>
+        ) : null}
 
         {queuePosition && queuePosition > 0 ? (
           <div className="flash">

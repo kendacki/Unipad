@@ -10,7 +10,7 @@ import {
 } from "react";
 import { AnimatePresence, m } from "framer-motion";
 import { toUserError, type ErrorInfo } from "@/lib/errors";
-import { modalBackdrop, modalPanel, springSnappy, toastItem } from "@/lib/motion";
+import { modalBackdrop, modalPanel, toastItem } from "@/lib/motion";
 
 export type ToastKind = "error" | "success" | "info";
 
@@ -225,26 +225,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <h3>{confirm.title}</h3>
               <p className="muted">{confirm.message}</p>
               <div className="modal-actions">
-                <m.button
-                  type="button"
-                  className="btn btn-ghost"
-                  whileHover={{ y: -1 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={springSnappy}
-                  onClick={onCancel}
-                >
+                <button type="button" className="btn btn-ghost" onClick={onCancel}>
                   {confirm.cancelLabel ?? "Cancel"}
-                </m.button>
-                <m.button
-                  type="button"
-                  className="btn btn-signal"
-                  whileHover={{ y: -1 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={springSnappy}
-                  onClick={onConfirmClick}
-                >
+                </button>
+                <button type="button" className="btn btn-signal" onClick={onConfirmClick}>
                   {confirm.confirmLabel ?? "Continue"}
-                </m.button>
+                </button>
               </div>
             </m.div>
           </m.div>

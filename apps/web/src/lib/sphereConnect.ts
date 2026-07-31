@@ -23,9 +23,46 @@ export const SPHERE_WALLET_URL = (
   process.env.NEXT_PUBLIC_SPHERE_WALLET_URL ?? "https://sphere.unicity.network"
 ).replace(/\/$/, "");
 
+/** Must match the window name used by Sphere SDK `connectViaPopup`. */
+export const SPHERE_WALLET_WINDOW_NAME = "sphere-wallet";
+
+export const SPHERE_POPUP_FEATURES = "width=420,height=720,scrollbars=yes,resizable=yes";
+
 /** Sphere CloudFront/WAF blocks popup URLs that include localhost / 127.0.0.1. */
 export function isLocalDevHost(hostname = typeof window !== "undefined" ? window.location.hostname : "") {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+/**
+ * Open / focus the Sphere wallet popup under a user gesture.
+ * Uses the same window name as autoConnect so a later reconnect reuses it.
+ * No-op when the Sphere extension is available (extension shows its own UI).
+ */
+export function prepareSpherePaymentWindow(): void {
+  if (typeof window === "undefined") return;
+  if (hasExtension()) return;
+
+  const origin = encodeURIComponent(window.location.origin);
+  const popup = window.open(
+    `${SPHERE_WALLET_URL}/connect?origin=${origin}`,
+    SPHERE_WALLET_WINDOW_NAME,
+    SPHERE_POPUP_FEATURES,
+  );
+  if (!popup) {
+    throw new Error("autoConnect: Failed to open wallet popup — check popup blocker settings");
+  }
+  try {
+    popup.focus();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** True when the Connect client still thinks the transport is live. */
+export function isSphereClientConnected(client: SphereClient | null | undefined): boolean {
+  if (!client) return false;
+  const c = client as SphereClient & { isConnected?: boolean };
+  return c.isConnected !== false;
 }
 
 export const LOCALHOST_SPHERE_BLOCKED =
@@ -41,8 +78,11 @@ const CONNECT_PERMISSIONS = [
 
 export type SphereClient = {
   walletIdentity: { chainPubkey: string; nametag?: string } | null;
+  /** Present on ConnectClient — false after popup close / disconnect. */
+  isConnected?: boolean;
   query: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>;
   intent: <T = unknown>(action: string, params: Record<string, unknown>) => Promise<T>;
+  on?: (event: string, handler: (data: unknown) => void) => () => void;
 };
 
 export type SphereSession = {
@@ -101,7 +141,9 @@ export async function connectSphereWallet(): Promise<SphereSession> {
     permissions: [...CONNECT_PERMISSIONS],
     resumeSessionId: resumeSessionId(),
     silent: false,
-    popupFeatures: "width=420,height=720,scrollbars=yes,resizable=yes",
+    // Fail faster than the SDK default (120s) when the wallet never shows UI.
+    intentTimeout: 55_000,
+    popupFeatures: SPHERE_POPUP_FEATURES,
     // On localhost, never use the popup path — only the extension avoids the WAF block.
     ...(local && extensionReady ? { forceTransport: "extension" as const } : {}),
   });
@@ -181,4 +223,34 @@ export function describeConnectError(err: unknown): string {
     return "Sphere did not grant the permissions Unipad needs (sign + send). Approve all scopes.";
   }
   return msg || "Could not connect to Sphere wallet";
+}
+
+/** Map UCT send / intent failures to short user-facing copy. */
+export function describePaymentError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+
+  if (lower.includes("popup") && (lower.includes("blocker") || lower.includes("failed to open"))) {
+    return "Allow popups for this site, then tap Pay again. Sphere opens in a wallet window.";
+  }
+  if (
+    lower.includes("outcome unknown") ||
+    lower.includes("did not show") ||
+    lower.includes("payment confirmation")
+  ) {
+    return "Sphere did not show a payment confirmation. Keep the Sphere wallet window open (or install the Sphere extension), then try Pay again.";
+  }
+  if (lower.includes("not connected") || lower.includes("disconnected")) {
+    return "Sphere wallet disconnected. Tap Pay again and keep the Sphere window open.";
+  }
+  if (
+    (lower.includes("user") && (lower.includes("reject") || lower.includes("denied") || lower.includes("cancel"))) ||
+    lower.includes("rejected")
+  ) {
+    return "Payment rejected in Sphere.";
+  }
+  if (lower.includes("insufficient") || lower.includes("balance")) {
+    return "Not enough UCT in Sphere to complete this mint.";
+  }
+  return msg || "UCT payment failed";
 }

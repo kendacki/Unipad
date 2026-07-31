@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { formatUct, normalizeSphereRecipient } from "@unipad/shared";
+import { normalizeSphereRecipient } from "@unipad/shared";
 import { api } from "./api";
 import { ApiError } from "./errors";
 import { isSessionJwtExpired, paymentRefFromSendResult, POPUP_SESSION_KEY } from "./sphere";
@@ -18,6 +18,10 @@ import {
   INTENT_ACTIONS,
   connectSphereWallet,
   describeConnectError,
+  describePaymentError,
+  hasExtension,
+  isSphereClientConnected,
+  prepareSpherePaymentWindow,
   resolveUctCoinId,
   type SphereClient,
   type SphereSession,
@@ -26,6 +30,8 @@ import {
 type SphereHandle = {
   client: SphereClient;
   disconnect: () => Promise<void>;
+  transport: string;
+  unsubDisconnected?: () => void;
 };
 
 type WalletState = {
@@ -43,6 +49,11 @@ type WalletState = {
    * @returns Active Unipad session JWT
    */
   ensureSphereConnected: () => Promise<string>;
+  /**
+   * Call from the Pay click: reopen/focus Sphere under the gesture, reconnect if
+   * the popup died, then return the session JWT. Must run before payUct.
+   */
+  ensureSphereForPayment: () => Promise<string>;
   disconnect: () => void;
   payUct: (params: {
     recipient: string;
@@ -54,6 +65,7 @@ type WalletState = {
 
 const Ctx = createContext<WalletState | null>(null);
 const STORAGE_KEY = "unipad.session";
+const PAY_TIMEOUT_MS = 50_000;
 
 type Stored = {
   token: string;
@@ -104,24 +116,59 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setDisplayName(session.displayName ?? null);
   }, []);
 
-  const attachSphere = useCallback((session: SphereSession) => {
-    sphereRef.current = {
-      client: session.client,
-      disconnect: session.disconnect,
-    };
-    setSphereReady(true);
+  const softDetachSphere = useCallback(() => {
+    const handle = sphereRef.current;
+    sphereRef.current = null;
+    setSphereReady(false);
+    if (!handle) return;
+    try {
+      handle.unsubDisconnected?.();
+    } catch {
+      /* ignore */
+    }
+    // Do NOT call disconnect() — that closes the Sphere popup we may have just opened.
   }, []);
+
+  const attachSphere = useCallback(
+    (session: SphereSession) => {
+      softDetachSphere();
+
+      let unsubDisconnected: (() => void) | undefined;
+      try {
+        unsubDisconnected = session.client.on?.("wallet:disconnected", () => {
+          if (sphereRef.current?.client === session.client) {
+            softDetachSphere();
+          }
+        });
+      } catch {
+        /* older clients */
+      }
+
+      sphereRef.current = {
+        client: session.client,
+        disconnect: session.disconnect,
+        transport: session.transport,
+        unsubDisconnected,
+      };
+      setSphereReady(true);
+    },
+    [softDetachSphere],
+  );
 
   const clearSphere = useCallback(async () => {
     const handle = sphereRef.current;
     sphereRef.current = null;
     setSphereReady(false);
-    if (handle) {
-      try {
-        await handle.disconnect();
-      } catch {
-        /* ignore */
-      }
+    if (!handle) return;
+    try {
+      handle.unsubDisconnected?.();
+    } catch {
+      /* ignore */
+    }
+    try {
+      await handle.disconnect();
+    } catch {
+      /* ignore */
     }
     try {
       sessionStorage.removeItem(POPUP_SESSION_KEY);
@@ -167,8 +214,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const existingToken = tokenRef.current;
     const tokenFresh = existingToken && !isSessionJwtExpired(existingToken);
 
-    if (sphereRef.current && tokenFresh) {
+    if (sphereRef.current && tokenFresh && isSphereClientConnected(sphereRef.current.client)) {
       return existingToken!;
+    }
+
+    if (sphereRef.current && !isSphereClientConnected(sphereRef.current.client)) {
+      softDetachSphere();
     }
 
     setConnecting(true);
@@ -198,7 +249,39 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setConnecting(false);
     }
-  }, [attachSphere, clearSphere, completeAuth]);
+  }, [attachSphere, clearSphere, completeAuth, softDetachSphere]);
+
+  /**
+   * Pay-click path: reopen Sphere under the gesture, then soft-reconnect so send
+   * UI can appear. Closing the Connect popup after login is the usual hang cause.
+   */
+  const ensureSphereForPayment = useCallback(async () => {
+    // Caller should have already called prepareSpherePaymentWindow() sync in the
+    // same click. We call it again here as a safety net (still same turn if sync).
+    try {
+      prepareSpherePaymentWindow();
+    } catch (err) {
+      throw new ApiError(describeConnectError(err), {
+        code: "UPAD_UNAUTHORIZED",
+        status: 401,
+      });
+    }
+
+    const existing = sphereRef.current;
+    const ext = hasExtension();
+
+    if (ext && existing && isSphereClientConnected(existing.client)) {
+      const existingToken = tokenRef.current;
+      if (existingToken && !isSessionJwtExpired(existingToken)) {
+        return existingToken;
+      }
+    }
+
+    // Popup path (or dead extension client): soft-detach and reconnect to the
+    // window we just opened — never call disconnect() (it closes the popup).
+    softDetachSphere();
+    return ensureSphereConnected();
+  }, [ensureSphereConnected, softDetachSphere]);
 
   const connectSphere = useCallback(async () => {
     await ensureSphereConnected();
@@ -211,9 +294,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       memo: string;
       coinIdHex?: string;
     }) => {
-      // Prefer ensureSphereConnected() from the mint click before long awaits —
-      // popup reconnect here may be blocked after mint-intent.
-      if (!sphereRef.current) {
+      if (!sphereRef.current || !isSphereClientConnected(sphereRef.current.client)) {
         throw new ApiError("Reconnect Sphere wallet to pay in UCT", {
           code: "UPAD_UNAUTHORIZED",
           status: 401,
@@ -223,8 +304,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const to = normalizeSphereRecipient(params.recipient);
 
       try {
-        // Resolve coin id WITHOUT awaiting when the mint intent already provided it —
-        // any await before client.intent() can lose the click gesture and block Sphere UI.
         let coinId: string;
         if (params.coinIdHex && /^[0-9a-f]{64}$/i.test(params.coinIdHex)) {
           coinId = params.coinIdHex.toLowerCase();
@@ -232,20 +311,42 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           coinId = await resolveUctCoinId(handle.client);
         }
 
-        // Start send UI in this turn (must be called from a click handler).
+        // `to` is the CONNECT.md field; some wallet builds also read `recipient`.
         const sendPromise = handle.client.intent(INTENT_ACTIONS.SEND, {
           to,
+          recipient: to,
           amount: params.amount,
           coinId,
           memo: params.memo,
         });
 
-        const raw = await sendPromise;
+        const timed = new Promise<never>((_, reject) => {
+          window.setTimeout(() => {
+            reject(
+              new ApiError(
+                "Sphere did not show a payment confirmation. Keep the Sphere wallet window open (or install the Sphere extension), then try Pay again.",
+                { code: "UPAD_PAYMENT_TIMEOUT", status: 408 },
+              ),
+            );
+          }, PAY_TIMEOUT_MS);
+        });
+
+        const raw = await Promise.race([sendPromise, timed]);
         return paymentRefFromSendResult(raw, params.memo);
       } catch (err) {
         if (err instanceof ApiError) throw err;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = describePaymentError(err);
+        const lower = message.toLowerCase();
+        const code =
+          lower.includes("reject") || lower.includes("denied") || lower.includes("cancel")
+            ? "UPAD_PAYMENT_REJECTED"
+            : lower.includes("insufficient") || lower.includes("balance")
+              ? "UPAD_INSUFFICIENT_FUNDS"
+              : lower.includes("outcome unknown") || lower.includes("confirmation")
+                ? "UPAD_PAYMENT_TIMEOUT"
+                : "UPAD_PAYMENT_FAILED";
         throw new ApiError(message || "UCT payment failed", {
+          code,
           status: 400,
         });
       }
@@ -262,6 +363,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       sphereReady,
       connectSphere,
       ensureSphereConnected,
+      ensureSphereForPayment,
       disconnect,
       payUct,
     }),
@@ -273,6 +375,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       sphereReady,
       connectSphere,
       ensureSphereConnected,
+      ensureSphereForPayment,
       disconnect,
       payUct,
     ],
@@ -292,4 +395,4 @@ export function shortPrincipal(p: string) {
   return `${p.slice(0, 8)}…${p.slice(-4)}`;
 }
 
-export { formatUct };
+export { formatUct } from "@unipad/shared";
