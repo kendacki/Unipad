@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { listWalletTokens } from "@/lib/mintStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ principal: string }> };
 
-/** Wallet mint inventory — empty until settlement DB is hosted on Vercel. */
+/** Wallet mint inventory from the serverless mint ledger. */
 export async function GET(_request: Request, ctx: Ctx) {
   const { principal } = await ctx.params;
   if (!principal) {
@@ -14,5 +15,16 @@ export async function GET(_request: Request, ctx: Ctx) {
       { status: 400 },
     );
   }
-  return NextResponse.json({ tokens: [] });
+  const tokens = await listWalletTokens(decodeURIComponent(principal));
+  return NextResponse.json({
+    tokens: tokens.map((t) => ({
+      collectionId: t.collectionId,
+      collectionName: t.collectionName,
+      slug: t.slug,
+      coverUrl: t.coverUrl,
+      tokenId: t.tokenId,
+      mintTxRef: t.mintTxRef,
+      mintedAt: t.mintedAt,
+    })),
+  });
 }

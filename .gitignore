@@ -19,3 +19,4 @@ apps/web/public/hero-bg-source.png
 
 tsbuildinfo
 *.tsbuildinfo
+.env*
