@@ -220,22 +220,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         });
       }
       const handle = sphereRef.current;
-
       const to = normalizeSphereRecipient(params.recipient);
 
       try {
-        const coinId =
-          params.coinIdHex && /^[0-9a-f]{64}$/i.test(params.coinIdHex)
-            ? params.coinIdHex.toLowerCase()
-            : await resolveUctCoinId(handle.client);
+        // Resolve coin id WITHOUT awaiting when the mint intent already provided it —
+        // any await before client.intent() can lose the click gesture and block Sphere UI.
+        let coinId: string;
+        if (params.coinIdHex && /^[0-9a-f]{64}$/i.test(params.coinIdHex)) {
+          coinId = params.coinIdHex.toLowerCase();
+        } else {
+          coinId = await resolveUctCoinId(handle.client);
+        }
 
-        const raw = await handle.client.intent(INTENT_ACTIONS.SEND, {
+        // Start send UI in this turn (must be called from a click handler).
+        const sendPromise = handle.client.intent(INTENT_ACTIONS.SEND, {
           to,
           amount: params.amount,
           coinId,
           memo: params.memo,
         });
 
+        const raw = await sendPromise;
         return paymentRefFromSendResult(raw, params.memo);
       } catch (err) {
         if (err instanceof ApiError) throw err;

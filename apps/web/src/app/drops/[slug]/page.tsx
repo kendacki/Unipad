@@ -172,12 +172,10 @@ export default function DropDetailPage() {
     if (!collection || mintLockRef.current) return;
     mintLockRef.current = true;
 
-    // Sphere Connect does not survive page refresh — JWT might, but the live
-    // wallet client does not. Reconnect from this click before any long awaits
-    // so the Sphere popup still counts as a user gesture.
     let sessionToken: string;
     try {
       setStage("ready");
+      // Sphere Connect must open from this click. JWT alone is not enough to pay.
       sessionToken = await ensureSphereConnected();
     } catch (e) {
       toast.error(e);
@@ -185,28 +183,16 @@ export default function DropDetailPage() {
       return;
     }
 
-    const ok = await toast.confirm({
-      title: `Mint for ${priceLabel}?`,
-      message: "You’ll pay in UCT first. Then we finish your mint automatically.",
-      confirmLabel: "Pay & mint",
-      cancelLabel: "Cancel",
-    });
-    if (!ok) {
-      mintLockRef.current = false;
-      return;
-    }
-
     setResult(null);
     setQueuePosition(null);
+
+    let nextIntent: MintIntentResponse;
     try {
       setStage("intent");
       toast.info("Reserving your spot…");
-
-      let nextIntent;
       try {
         nextIntent = await api.mintIntent(sessionToken, collection.id);
       } catch (err) {
-        // Expired session JWT — re-auth once from the same click chain if Sphere is still live.
         if (err instanceof ApiError && err.status === 401) {
           sessionToken = await ensureSphereConnected();
           nextIntent = await api.mintIntent(sessionToken, collection.id);
@@ -215,16 +201,56 @@ export default function DropDetailPage() {
         }
       }
       setIntent(nextIntent);
+    } catch (e) {
+      toast.error(e);
+      setStage("error");
+      mintLockRef.current = false;
+      return;
+    }
 
-      setStage("paying");
-      toast.info("Waiting for UCT payment…");
-      const paymentRef = await payUct({
-        recipient: nextIntent.payment.recipient,
-        amount: nextIntent.payment.amount,
-        memo: nextIntent.payment.memo,
-        coinIdHex: nextIntent.payment.coinIdHex,
+    // Sphere send UI must start inside the confirm-button click — not after
+    // mint-intent awaits — or Chrome blocks the wallet popup and we hang at 48%.
+    let paymentRef: string | null;
+    try {
+      paymentRef = await toast.confirmAndRun({
+        title: `Mint for ${priceLabel}?`,
+        message:
+          "Approve the UCT payment in Sphere. We’ll finish your mint right after you confirm.",
+        confirmLabel: "Pay with Sphere",
+        cancelLabel: "Cancel",
+        run: () => {
+          setStage("paying");
+          toast.info("Approve UCT in Sphere…");
+          return payUct({
+            recipient: nextIntent.payment.recipient,
+            amount: nextIntent.payment.amount,
+            memo: nextIntent.payment.memo,
+            coinIdHex: nextIntent.payment.coinIdHex,
+          });
+        },
       });
+    } catch (e) {
+      const info = toast.error(e);
+      if (
+        info.code === "UPAD_PAYMENT_REJECTED" ||
+        info.code === "UPAD_INSUFFICIENT_FUNDS" ||
+        info.code === "UPAD_UNAUTHORIZED"
+      ) {
+        setStage("ready");
+      } else {
+        setStage("error");
+      }
+      mintLockRef.current = false;
+      return;
+    }
 
+    if (!paymentRef) {
+      setStage("ready");
+      mintLockRef.current = false;
+      return;
+    }
+
+    try {
       setStage("minting");
       toast.info("Finishing your mint…");
       const mintResult = await api.mint(
@@ -248,7 +274,6 @@ export default function DropDetailPage() {
       refresh();
     } catch (e) {
       const info = toast.error(e);
-      // Payment cancel / funds issues should return to a clean retryable state.
       if (
         info.code === "UPAD_PAYMENT_REJECTED" ||
         info.code === "UPAD_INSUFFICIENT_FUNDS" ||
@@ -302,7 +327,7 @@ export default function DropDetailPage() {
     stage === "intent"
       ? "Reserving your spot…"
       : stage === "paying"
-        ? "Waiting for UCT payment…"
+        ? "Approve UCT in Sphere…"
         : stage === "queued"
           ? `In line${queuePosition ? ` #${queuePosition}` : ""}…`
           : stage === "minting"
@@ -440,7 +465,7 @@ export default function DropDetailPage() {
               ? "Connecting…"
               : "Connect Sphere to mint"
             : stage === "paying"
-              ? "Confirm payment…"
+              ? "Approve in Sphere…"
               : stage === "queued"
                 ? `In line #${queuePosition ?? "…"}`
                 : stage === "minting" || stage === "intent"

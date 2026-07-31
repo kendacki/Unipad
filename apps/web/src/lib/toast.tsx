@@ -27,7 +27,9 @@ type ConfirmState = {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  resolve: (ok: boolean) => void;
+  /** Optional action started synchronously inside the confirm click (preserves popup gesture). */
+  run?: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
 } | null;
 
 type ToastApi = {
@@ -41,6 +43,18 @@ type ToastApi = {
     confirmLabel?: string;
     cancelLabel?: string;
   }) => Promise<boolean>;
+  /**
+   * Confirm modal whose primary button starts `run()` in the same click turn.
+   * Required for Sphere send popups (Chrome blocks popups after prior awaits).
+   * Returns null if cancelled.
+   */
+  confirmAndRun: <T>(opts: {
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    run: () => Promise<T>;
+  }) => Promise<T | null>;
 };
 
 const Ctx = createContext<ToastApi | null>(null);
@@ -89,13 +103,71 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             cancelLabel,
             resolve: (ok) => {
               setConfirm(null);
-              resolve(ok);
+              resolve(Boolean(ok));
+            },
+          });
+        }),
+      confirmAndRun: <T,>({
+        title,
+        message,
+        confirmLabel,
+        cancelLabel,
+        run,
+      }: {
+        title: string;
+        message: string;
+        confirmLabel?: string;
+        cancelLabel?: string;
+        run: () => Promise<T>;
+      }) =>
+        new Promise<T | null>((resolve, reject) => {
+          setConfirm({
+            title,
+            message,
+            confirmLabel,
+            cancelLabel,
+            run,
+            resolve: (value) => {
+              if (value === null || value === false) {
+                resolve(null);
+                return;
+              }
+              Promise.resolve(value as Promise<T>)
+                .then((result) => resolve(result))
+                .catch(reject);
             },
           });
         }),
     }),
     [push],
   );
+
+  function onCancel() {
+    if (!confirm) return;
+    const { resolve } = confirm;
+    setConfirm(null);
+    resolve(null);
+  }
+
+  function onConfirmClick() {
+    if (!confirm) return;
+    const { resolve, run } = confirm;
+    // Close modal first, but start `run()` in this same click turn so Sphere
+    // can open its payment UI (popup/extension) under the user gesture.
+    setConfirm(null);
+    if (run) {
+      let started: Promise<unknown>;
+      try {
+        started = run();
+      } catch (err) {
+        resolve(Promise.reject(err));
+        return;
+      }
+      resolve(started);
+      return;
+    }
+    resolve(true);
+  }
 
   return (
     <Ctx.Provider value={api}>
@@ -159,7 +231,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   whileHover={{ y: -1 }}
                   whileTap={{ scale: 0.98 }}
                   transition={springSnappy}
-                  onClick={() => confirm.resolve(false)}
+                  onClick={onCancel}
                 >
                   {confirm.cancelLabel ?? "Cancel"}
                 </m.button>
@@ -169,7 +241,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                   whileHover={{ y: -1 }}
                   whileTap={{ scale: 0.98 }}
                   transition={springSnappy}
-                  onClick={() => confirm.resolve(true)}
+                  onClick={onConfirmClick}
                 >
                   {confirm.confirmLabel ?? "Continue"}
                 </m.button>
