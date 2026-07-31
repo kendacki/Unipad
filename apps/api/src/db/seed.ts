@@ -26,7 +26,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "signal-001",
     name: "Signal Genesis",
-    description: "Opening edition from North Signal — mint from 1 UCT on Unicity.",
+    description: "Opening edition from the North Signal series.",
     creatorPrincipal: "mock_creator_north_signal",
     creatorName: "North Signal Studio",
     priceUct: "1",
@@ -36,7 +36,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "orbit-pulse",
     name: "Orbit Pulse",
-    description: "Kinetic characters from Mira Vale — fair mint, settle in UCT.",
+    description: "Kinetic characters built for motion.",
     creatorPrincipal: "mock_creator_mira_vale",
     creatorName: "Mira Vale",
     priceUct: null,
@@ -46,7 +46,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "north-flare",
     name: "North Flare",
-    description: "Lumen Collective’s night-sky drop on Unipad.",
+    description: "A night-sky drop from the lumen edge.",
     creatorPrincipal: "mock_creator_lumen",
     creatorName: "Lumen Collective",
     priceUct: null,
@@ -56,7 +56,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "amber-relay",
     name: "Amber Relay",
-    description: "Warm-tone relics by Kai Rostova — pay once in UCT.",
+    description: "Warm-tone relics with a single settle.",
     creatorPrincipal: "mock_creator_kai_rostova",
     creatorName: "Kai Rostova",
     priceUct: null,
@@ -66,7 +66,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "glass-harbor",
     name: "Glass Harbor",
-    description: "Coastal figures from Harbor Atelier — live on Unicity.",
+    description: "Coastal figures from the atelier line.",
     creatorPrincipal: "mock_creator_harbor",
     creatorName: "Harbor Atelier",
     priceUct: null,
@@ -76,7 +76,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "ember-kit",
     name: "Ember Kit",
-    description: "Toy-form sculptures by Jun Park — mint with UCT.",
+    description: "Toy-form sculptures ready to claim.",
     creatorPrincipal: "mock_creator_jun_park",
     creatorName: "Jun Park",
     priceUct: null,
@@ -86,7 +86,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "private-circuit",
     name: "Private Circuit",
-    description: "Curated edition by Elena Moss — mint with UCT on Unipad.",
+    description: "A curated private edition.",
     creatorPrincipal: "mock_creator_elena_moss",
     creatorName: "Elena Moss",
     priceUct: null,
@@ -96,7 +96,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "volt-mascot",
     name: "Volt Mascot",
-    description: "Electric softforms by Rio Quinn — fair mint on Unicity.",
+    description: "Electric softforms with charge.",
     creatorPrincipal: "mock_creator_rio_quinn",
     creatorName: "Rio Quinn",
     priceUct: null,
@@ -106,7 +106,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "nova-trinket",
     name: "Nova Trinket",
-    description: "Playful fiends by Sol Varga — mint in UCT on Unipad.",
+    description: "Playful fiends for the shelf.",
     creatorPrincipal: "mock_creator_sol_varga",
     creatorName: "Sol Varga",
     priceUct: null,
@@ -116,7 +116,7 @@ const DROP_DEFS: DropSeed[] = [
   {
     slug: "moss-guard",
     name: "Moss Guard",
-    description: "Wall-peek guardians by Ivy Chen — live mint with UCT.",
+    description: "Wall-peek guardians on watch.",
     creatorPrincipal: "mock_creator_ivy_chen",
     creatorName: "Ivy Chen",
     priceUct: null,
@@ -228,7 +228,7 @@ async function cleanupPlaceholderDrops() {
         r.slug,
         r.name,
         r.creator,
-        "Curated edition by Elena Moss — mint with UCT on Unipad.",
+        "A curated private edition.",
       ],
     );
   }

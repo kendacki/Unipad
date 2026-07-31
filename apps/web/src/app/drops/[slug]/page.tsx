@@ -8,7 +8,7 @@ import { AnimatePresence, m } from "framer-motion";
 import type { Collection, MintIntentResponse, MintResult } from "@unipad/shared";
 import { api, API_URL } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
-import { dropPriceLabel, isMintable, statusLabel } from "@/lib/drops";
+import { dropPriceLabel, isMintable, statusLabel, cleanDropDescription } from "@/lib/drops";
 import { formatLaunchAt } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
@@ -371,6 +371,11 @@ export default function DropDetailPage() {
               ? "Mint complete"
               : null;
 
+  const description = cleanDropDescription(
+    collection.description,
+    collection.creatorDisplayName,
+  );
+
   return (
     <m.section
       className="shell collection-hero"
@@ -409,12 +414,12 @@ export default function DropDetailPage() {
         <h1 className="display" style={{ fontSize: "clamp(2rem, 4vw, 3rem)" }}>
           {collection.name}
         </h1>
-        {collection.description ? (
+        <div className="muted">by {collection.creatorDisplayName || "Creator"}</div>
+        {description ? (
           <p className="muted" style={{ margin: 0, lineHeight: 1.55 }}>
-            {collection.description}
+            {description}
           </p>
         ) : null}
-        <div className="muted">by {collection.creatorDisplayName || "Creator"}</div>
 
         <div className="mint-price-row">
           <div>

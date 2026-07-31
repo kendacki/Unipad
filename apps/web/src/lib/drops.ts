@@ -35,6 +35,34 @@ export function matchesFilter(c: Collection, filter: DropFilter): boolean {
   return true;
 }
 
+/**
+ * Drop blurbs for UI: strip mint/Unipad marketing suffixes and a duplicated
+ * "by {creator}" clause when the creator line is shown separately.
+ */
+export function cleanDropDescription(
+  description: string | null | undefined,
+  creatorName?: string | null,
+): string {
+  let text = (description || "").trim();
+  if (!text) return "";
+
+  text = text.replace(
+    /\s*[—–-]\s*(?:mint|live mint|fair mint|pay once|settle)\b.*$/i,
+    "",
+  );
+  text = text.replace(/\s+on\s+(?:Unipad|Unicity)\.?$/i, "");
+  text = text.replace(/\s*[—–-]\s*mint (?:from|with)\b.*$/i, "");
+
+  const creator = creatorName?.trim();
+  if (creator) {
+    const escaped = creator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    text = text.replace(new RegExp(`\\s*by\\s+${escaped}\\b`, "ig"), "");
+  }
+
+  text = text.replace(/\s{2,}/g, " ").replace(/\s*[—–,-]\s*$/g, "").trim();
+  return text;
+}
+
 /** Live mintable first, then upcoming, then sold out / ended */
 export function sortForStorefront(collections: Collection[]): Collection[] {
   const rank = (c: Collection) => {
