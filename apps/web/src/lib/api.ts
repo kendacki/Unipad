@@ -12,10 +12,11 @@ import type {
 import { ApiError } from "@/lib/errors";
 
 /**
- * Local: Hono API on :8787.
- * Production (Vercel): same-origin Next routes under /v1/* (+ Blob uploads).
+ * Browser: always same-origin `/v1/*` so mint inventory matches this deployment’s ledger.
+ * Server / SSR: prefer configured URL, then Vercel URL, then local Hono.
  */
 function resolveApiUrl(): string {
+  if (typeof window !== "undefined") return "";
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (configured) return configured.replace(/\/$/, "");
   if (process.env.NEXT_PUBLIC_VERCEL_URL) {
@@ -160,8 +161,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ nonce, signature }),
     }),
-  walletTokens: (principal: string) =>
-    request<{
+  walletTokens: (principal: string, nametag?: string | null) => {
+    const q = nametag ? `?nametag=${encodeURIComponent(nametag)}` : "";
+    return request<{
       tokens: Array<{
         collectionId: string;
         collectionName: string;
@@ -170,8 +172,53 @@ export const api = {
         tokenId: number;
         mintTxRef: string;
         mintedAt: string;
+        ownerPrincipal?: string;
       }>;
-    }>(`/v1/wallets/${encodeURIComponent(principal)}/tokens`),
+    }>(`/v1/wallets/${encodeURIComponent(principal)}/tokens${q}`);
+  },
+  /** Prefer for My mints — uses the session JWT principal (avoids client principal drift). */
+  myTokens: (token: string, nametag?: string | null) => {
+    const q = nametag ? `?nametag=${encodeURIComponent(nametag)}` : "";
+    return request<{
+      principal: string;
+      tokens: Array<{
+        collectionId: string;
+        collectionName: string;
+        slug: string;
+        coverUrl: string | null;
+        tokenId: number;
+        mintTxRef: string;
+        mintedAt: string;
+        ownerPrincipal?: string;
+      }>;
+    }>(`/v1/me/tokens${q}`, { token });
+  },
+  transferToken: (
+    token: string,
+    body: { collectionId: string; tokenId: number; to: string; nametag?: string | null },
+  ) =>
+    request<{
+      ok: boolean;
+      token: {
+        collectionId: string;
+        collectionName: string;
+        slug: string;
+        coverUrl: string | null;
+        tokenId: number;
+        mintTxRef: string;
+        mintedAt: string;
+        ownerPrincipal: string;
+      };
+    }>("/v1/me/tokens/transfer", {
+      method: "POST",
+      token,
+      body: JSON.stringify({
+        collectionId: body.collectionId,
+        tokenId: body.tokenId,
+        to: body.to,
+        nametag: body.nametag ?? undefined,
+      }),
+    }),
 };
 
 export { API_URL };

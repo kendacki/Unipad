@@ -1037,6 +1037,53 @@ h3,
   opacity: 0.92;
 }
 
+.mint-owned {
+  align-content: start;
+}
+
+.mint-owned .drop-media {
+  position: relative;
+  display: block;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.mint-send {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.mint-send input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.mint-send input:focus {
+  outline: 2px solid color-mix(in srgb, var(--orange) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .drop-skeleton {
   min-height: 280px;
   background: linear-gradient(90deg, var(--paper-2) 25%, #eee 50%, var(--paper-2) 75%);

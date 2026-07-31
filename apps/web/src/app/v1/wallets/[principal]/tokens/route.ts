@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ principal: string }> };
 
 /** Wallet mint inventory from the serverless mint ledger. */
-export async function GET(_request: Request, ctx: Ctx) {
+export async function GET(request: Request, ctx: Ctx) {
   const { principal } = await ctx.params;
   if (!principal) {
     return NextResponse.json(
@@ -15,7 +15,8 @@ export async function GET(_request: Request, ctx: Ctx) {
       { status: 400 },
     );
   }
-  const tokens = await listWalletTokens(decodeURIComponent(principal));
+  const nametag = new URL(request.url).searchParams.get("nametag");
+  const tokens = await listWalletTokens(decodeURIComponent(principal), { nametag });
   return NextResponse.json({
     tokens: tokens.map((t) => ({
       collectionId: t.collectionId,
@@ -25,6 +26,7 @@ export async function GET(_request: Request, ctx: Ctx) {
       tokenId: t.tokenId,
       mintTxRef: t.mintTxRef,
       mintedAt: t.mintedAt,
+      ownerPrincipal: t.ownerPrincipal,
     })),
   });
 }

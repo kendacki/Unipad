@@ -92,6 +92,11 @@ const CATALOG: Record<string, ErrorInfo> = {
     title: "Not found",
     message: "We couldn’t find that collection or request.",
   },
+  UPAD_TRANSFER_FAILED: {
+    code: "UPAD_TRANSFER_FAILED",
+    title: "Transfer failed",
+    message: "Couldn’t send that mint. Check the recipient and try again.",
+  },
   UPAD_AUTH_FAILED: {
     code: "UPAD_AUTH_FAILED",
     title: "Wallet sign-in failed",
@@ -127,6 +132,11 @@ const MESSAGE_TO_CODE: Array<[RegExp | string, string]> = [
   ["paymentRef already", "UPAD_PAYMENT_USED"],
   ["Payment memo mismatch", "UPAD_PAYMENT_MISMATCH"],
   ["Mock payments disabled", "UPAD_PAYMENT_MISMATCH"],
+  ["don’t own this mint", "UPAD_FORBIDDEN"],
+  ["Cannot transfer to yourself", "UPAD_VALIDATION"],
+  ["Recipient must be", "UPAD_VALIDATION"],
+  ["Recipient required", "UPAD_VALIDATION"],
+  ["Mint not found", "UPAD_NOT_FOUND"],
   ["Rate limit", "UPAD_RATE_LIMIT"],
   ["Idempotency-Key", "UPAD_IDEMPOTENCY"],
   ["Not found", "UPAD_NOT_FOUND"],

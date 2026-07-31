@@ -475,8 +475,9 @@ export default function DropDetailPage() {
           <m.div className="flash ok" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             Minted #{result.tokenId}.{" "}
             <Link href="/wallet" className="text-link">
-              View in My mints
-            </Link>
+              Open My mints
+            </Link>{" "}
+            to view it or send it to another wallet.
           </m.div>
         ) : null}
 

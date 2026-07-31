@@ -3,7 +3,7 @@
  * Persists intents + ledger in Vercel Blob when configured; otherwise in-memory
  * (local Next without BLOB_READ_WRITE_TOKEN).
  */
-import { list, put } from "@vercel/blob";
+import { del, list, put } from "@vercel/blob";
 import { nanoid } from "nanoid";
 import {
   DEFAULT_TREASURY_PRINCIPAL,
@@ -69,6 +69,67 @@ function memory(): MemoryDb {
 
 function useBlob(): boolean {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
+
+function assertPersistentLedger() {
+  if (process.env.VERCEL && !useBlob()) {
+    throw new MintHttpError(
+      "Mint storage is not configured on this deployment",
+      503,
+      "UPAD_UNAVAILABLE",
+    );
+  }
+}
+
+const CHAIN_PUBKEY_RE = /^[0-9a-f]{66}$/i;
+
+/** Recipient for Unipad ledger transfers: 66-hex chain pubkey or @nametag. */
+export function normalizeTransferRecipient(raw: string): string {
+  const value = raw.trim();
+  if (!value) {
+    throw new MintHttpError("Recipient required", 400, "UPAD_VALIDATION");
+  }
+  if (CHAIN_PUBKEY_RE.test(value)) return value.toLowerCase();
+  if (/^[0-9a-f]{64}$/i.test(value)) {
+    throw new MintHttpError(
+      "Use the full 66-char Sphere chain pubkey (starts with 02 or 03)",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
+  const tag = normalizeSphereRecipient(value);
+  if (!tag.startsWith("@") || tag.length < 4 || tag.length > 34) {
+    throw new MintHttpError(
+      "Recipient must be a @nametag (e.g. @alice) or a 66-char chain pubkey",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
+  return tag;
+}
+
+function ownersMatch(
+  storedOwner: string,
+  principal: string,
+  nametag?: string | null,
+): boolean {
+  const stored = storedOwner.trim();
+  const owner = normalizePrincipal(principal);
+  if (normalizePrincipal(stored) === owner) return true;
+  if (!nametag) return false;
+  try {
+    return normalizeSphereRecipient(stored) === normalizeSphereRecipient(nametag);
+  } catch {
+    return false;
+  }
+}
+
+function dedupeTokens(tokens: StoredToken[]): StoredToken[] {
+  const map = new Map<string, StoredToken>();
+  for (const t of tokens) {
+    map.set(`${t.collectionId}:${t.tokenId}`, t);
+  }
+  return [...map.values()].sort((a, b) => b.mintedAt.localeCompare(a.mintedAt));
 }
 
 function treasuryPrincipal(): string {
@@ -246,10 +307,28 @@ async function saveToken(token: StoredToken) {
   );
 }
 
+async function loadToken(collectionId: string, tokenId: number): Promise<StoredToken | null> {
+  if (!useBlob()) {
+    return memory().tokens.get(`${collectionId}:${tokenId}`) ?? null;
+  }
+  return getJson<StoredToken>(tokenPath(collectionId, tokenId));
+}
+
+async function removeWalletIndex(owner: string, collectionId: string, tokenId: number) {
+  if (!useBlob()) return;
+  const pathname = walletTokenPath(owner, collectionId, tokenId);
+  try {
+    await del(pathname, { token: process.env.BLOB_READ_WRITE_TOKEN });
+  } catch {
+    /* index may already be gone */
+  }
+}
+
 export async function createMintIntent(
   walletPrincipal: string,
   collectionIdOrSlug: string,
 ): Promise<MintIntentResponse> {
+  assertPersistentLedger();
   const principal = normalizePrincipal(walletPrincipal);
   const base = getCatalogCollection(collectionIdOrSlug);
   if (!base) throw new MintHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
@@ -314,6 +393,7 @@ export async function submitMint(params: {
   idempotencyKey: string;
   paymentRef: string;
 }): Promise<MintResult> {
+  assertPersistentLedger();
   const walletPrincipal = normalizePrincipal(params.walletPrincipal);
   const { collectionIdOrSlug, idempotencyKey, paymentRef } = params;
 
@@ -443,16 +523,120 @@ export async function getMintStatus(
   };
 }
 
-export async function listWalletTokens(principal: string): Promise<StoredToken[]> {
+export async function listWalletTokens(
+  principal: string,
+  opts?: { nametag?: string | null },
+): Promise<StoredToken[]> {
   const owner = normalizePrincipal(principal);
+  const nametag = opts?.nametag?.trim() || null;
+
   if (!useBlob()) {
-    return [...memory().tokens.values()]
-      .filter((t) => normalizePrincipal(t.ownerPrincipal) === owner)
-      .sort((a, b) => b.mintedAt.localeCompare(a.mintedAt));
+    return dedupeTokens(
+      [...memory().tokens.values()].filter((t) =>
+        ownersMatch(t.ownerPrincipal, owner, nametag),
+      ),
+    );
   }
-  const safe = encodeURIComponent(owner).slice(0, 120);
-  const tokens = await listJsonUnder<StoredToken>(`mints/wallets/${safe}/`);
-  return tokens
-    .filter((t) => normalizePrincipal(t.ownerPrincipal) === owner)
-    .sort((a, b) => b.mintedAt.localeCompare(a.mintedAt));
+
+  const prefixes = new Set<string>();
+  prefixes.add(`mints/wallets/${encodeURIComponent(owner).slice(0, 120)}/`);
+  if (nametag) {
+    const tag = normalizeSphereRecipient(nametag);
+    prefixes.add(`mints/wallets/${encodeURIComponent(tag).slice(0, 120)}/`);
+  }
+
+  let tokens: StoredToken[] = [];
+  for (const prefix of prefixes) {
+    tokens = tokens.concat(await listJsonUnder<StoredToken>(prefix));
+  }
+  tokens = tokens.filter((t) => ownersMatch(t.ownerPrincipal, owner, nametag));
+
+  // Repair path: token files exist but wallet index was missing / wrong principal key.
+  if (tokens.length === 0) {
+    const all = await listJsonUnder<StoredToken>("mints/tokens/");
+    const owned = all.filter((t) => ownersMatch(t.ownerPrincipal, owner, nametag));
+    for (const t of owned) {
+      try {
+        await putJson(
+          walletTokenPath(t.ownerPrincipal, t.collectionId, t.tokenId),
+          t,
+          { overwrite: true },
+        );
+      } catch {
+        /* best-effort repair */
+      }
+    }
+    return dedupeTokens(owned);
+  }
+
+  return dedupeTokens(tokens);
+}
+
+/**
+ * Move Unipad ledger ownership to another wallet (@nametag or chain pubkey).
+ * This is launchpad inventory transfer — not an on-chain NFT protocol move.
+ */
+export async function transferToken(params: {
+  fromPrincipal: string;
+  fromNametag?: string | null;
+  collectionId: string;
+  tokenId: number;
+  toRecipient: string;
+}): Promise<StoredToken> {
+  assertPersistentLedger();
+
+  const from = normalizePrincipal(params.fromPrincipal);
+  const to = normalizeTransferRecipient(params.toRecipient);
+  const tokenId = Number(params.tokenId);
+
+  if (!Number.isInteger(tokenId) || tokenId < 1) {
+    throw new MintHttpError("Invalid token id", 400, "UPAD_VALIDATION");
+  }
+  if (!params.collectionId?.trim()) {
+    throw new MintHttpError("collectionId required", 400, "UPAD_VALIDATION");
+  }
+
+  if (CHAIN_PUBKEY_RE.test(to) && normalizePrincipal(to) === from) {
+    throw new MintHttpError("Cannot transfer to yourself", 400, "UPAD_VALIDATION");
+  }
+  if (
+    params.fromNametag &&
+    !CHAIN_PUBKEY_RE.test(to) &&
+    normalizeSphereRecipient(params.fromNametag) === to
+  ) {
+    throw new MintHttpError("Cannot transfer to yourself", 400, "UPAD_VALIDATION");
+  }
+
+  const existing = await loadToken(params.collectionId, tokenId);
+  if (!existing) {
+    throw new MintHttpError("Mint not found", 404, "UPAD_NOT_FOUND");
+  }
+  if (!ownersMatch(existing.ownerPrincipal, from, params.fromNametag)) {
+    throw new MintHttpError("You don’t own this mint", 403, "UPAD_FORBIDDEN");
+  }
+
+  const previousOwner = existing.ownerPrincipal;
+  const updated: StoredToken = {
+    ...existing,
+    ownerPrincipal: to,
+  };
+
+  if (!useBlob()) {
+    memory().tokens.set(`${updated.collectionId}:${updated.tokenId}`, updated);
+    return updated;
+  }
+
+  await putJson(tokenPath(updated.collectionId, updated.tokenId), updated, {
+    overwrite: true,
+  });
+  await putJson(
+    walletTokenPath(updated.ownerPrincipal, updated.collectionId, updated.tokenId),
+    updated,
+    { overwrite: true },
+  );
+  if (normalizePrincipal(previousOwner) !== normalizePrincipal(to)) {
+    await removeWalletIndex(previousOwner, updated.collectionId, updated.tokenId);
+  }
+
+  return updated;
 }
