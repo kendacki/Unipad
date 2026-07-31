@@ -1597,6 +1597,28 @@ h3,
   border-color: var(--orange);
 }
 
+.cover-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.cover-upload-row input[type="file"] {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.cover-upload-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
 .schedule-block {
   display: grid;
   gap: 0.85rem;

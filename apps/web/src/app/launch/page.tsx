@@ -73,7 +73,9 @@ export default function LaunchPage() {
   const [slug, setSlug] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [description, setDescription] = useState("");
-  const [coverUrl, setCoverUrl] = useState("");
+  const [coverLink, setCoverLink] = useState("");
+  const [coverUploadUrl, setCoverUploadUrl] = useState("");
+  const [coverFileName, setCoverFileName] = useState("");
   const [totalSupply, setTotalSupply] = useState(100);
   const [royaltyBps, setRoyaltyBps] = useState(500);
   const [mintLimit, setMintLimit] = useState<MintLimit>(2);
@@ -118,6 +120,8 @@ export default function LaunchPage() {
     }
   }, [launchMode, schedulePreset, customDate, customHour, customMinute]);
 
+  const resolvedCoverUrl = coverLink.trim() || coverUploadUrl;
+
   async function onCoverFile(file: File | null) {
     if (!file) return;
     setUploading(true);
@@ -125,7 +129,9 @@ export default function LaunchPage() {
       // Covers go to Vercel Blob (same-origin /v1/media/upload). Wallet optional for upload.
       const t = sessionToken(token) ?? "blob";
       const saved = await api.uploadMedia(t, file);
-      setCoverUrl(saved.url);
+      setCoverUploadUrl(saved.url);
+      setCoverFileName(file.name);
+      setCoverLink("");
       toast.success("Image uploaded");
     } catch (e) {
       toast.error(e);
@@ -215,7 +221,7 @@ export default function LaunchPage() {
         description: description.trim(),
         totalSupply,
         royaltyBps,
-        coverUrl: coverUrl || undefined,
+        coverUrl: resolvedCoverUrl || undefined,
         creatorDisplayName: trimmedOwner,
         launchAt,
         phases: parsedPhases,
@@ -397,16 +403,30 @@ export default function LaunchPage() {
             </label>
             <label>
               Cover image link
-              <input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} />
+              <input
+                value={coverLink}
+                onChange={(e) => {
+                  setCoverLink(e.target.value);
+                  if (e.target.value.trim()) {
+                    setCoverUploadUrl("");
+                    setCoverFileName("");
+                  }
+                }}
+                placeholder="https://…"
+              />
             </label>
             <label>
               Or upload a cover
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                onChange={(e) => onCoverFile(e.target.files?.[0] ?? null)}
-              />
-              {uploading ? <span className="muted">Uploading…</span> : null}
+              <div className="cover-upload-row">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={(e) => onCoverFile(e.target.files?.[0] ?? null)}
+                />
+                <span className="cover-upload-name muted">
+                  {uploading ? "Uploading…" : coverFileName || ""}
+                </span>
+              </div>
             </label>
             <button
               type="button"
