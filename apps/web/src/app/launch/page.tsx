@@ -57,9 +57,7 @@ export default function LaunchPage() {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
-  const [coverUrl, setCoverUrl] = useState(
-    "https://images.unsplash.com/photo-1639628735078-ed2f038a193e?auto=format&fit=crop&w=1600&q=85",
-  );
+  const [coverUrl, setCoverUrl] = useState("");
   const [totalSupply, setTotalSupply] = useState(100);
   const [royaltyBps, setRoyaltyBps] = useState(500);
   const [phases, setPhases] = useState<PhaseDraft[]>([
@@ -300,7 +298,6 @@ export default function LaunchPage() {
             <label>
               Link name
               <input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} />
-              <span className="hint">Used in the URL, like /drops/{slug || "my-drop"}</span>
             </label>
             <label>
               Short description

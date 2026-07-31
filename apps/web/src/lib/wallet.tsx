@@ -34,8 +34,8 @@ type WalletState = {
   mock: boolean;
   connecting: boolean;
   connectMock: (role?: "creator" | "buyer") => Promise<void>;
-  /** Opens Sphere wallet (popup / extension). Must run from a click handler. */
-  connectSphere: () => Promise<void>;
+  /** Opens Sphere wallet (extension or popup). Must run from a click handler. */
+  connectSphere: () => Promise<{ mock: boolean; reason?: string }>;
   disconnect: () => void;
   payUct: (params: {
     recipient: string;
@@ -163,13 +163,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           session.identity.nametag ?? auth.displayName ?? auth.chainPubkey.slice(0, 12),
         mock: false,
       });
+      return { mock: false as const };
     } catch (err) {
       await clearSphere();
       // Never silently mock on Vercel / production
       if (ALLOW_DEV_MOCK) {
         console.warn("Sphere connect failed, falling back to mock:", err);
         await connectMock("buyer");
-        return;
+        return { mock: true as const, reason: describeConnectError(err) };
       }
       throw new Error(describeConnectError(err));
     } finally {

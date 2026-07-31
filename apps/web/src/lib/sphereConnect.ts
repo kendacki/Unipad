@@ -28,6 +28,14 @@ export const ALLOW_DEV_MOCK =
   process.env.NEXT_PUBLIC_UNIPAD_DEV_MOCK === "true" &&
   process.env.NODE_ENV !== "production";
 
+/** Sphere CloudFront/WAF blocks popup URLs that include localhost / 127.0.0.1. */
+export function isLocalDevHost(hostname = typeof window !== "undefined" ? window.location.hostname : "") {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+export const LOCALHOST_SPHERE_BLOCKED =
+  "LOCALHOST_SPHERE_BLOCKED: Sphere’s hosted wallet blocks localhost (CloudFront 403). Install the Sphere extension, open Unipad on a public HTTPS URL, or use Demo wallet locally.";
+
 const CONNECT_PERMISSIONS = [
   PERMISSION_SCOPES.IDENTITY_READ,
   PERMISSION_SCOPES.BALANCE_READ,
@@ -76,6 +84,15 @@ export async function connectSphereWallet(): Promise<SphereSession> {
     throw new Error("Sphere Connect only runs in the browser");
   }
 
+  const local = isLocalDevHost(window.location.hostname);
+  const extensionReady = hasExtension();
+
+  // Popup opens `${walletUrl}/connect?origin=${location.origin}`. Sphere’s
+  // CloudFront WAF returns 403 whenever that query contains localhost/127.0.0.1.
+  if (local && !extensionReady) {
+    throw new Error(LOCALHOST_SPHERE_BLOCKED);
+  }
+
   const result = await autoConnect({
     dapp: {
       name: "Unipad",
@@ -90,6 +107,8 @@ export async function connectSphereWallet(): Promise<SphereSession> {
     resumeSessionId: resumeSessionId(),
     silent: false,
     popupFeatures: "width=420,height=720,scrollbars=yes,resizable=yes",
+    // On localhost, never use the popup path — only the extension avoids the WAF block.
+    ...(local && extensionReady ? { forceTransport: "extension" as const } : {}),
   });
 
   persistSessionId(result.connection.sessionId);
@@ -145,6 +164,9 @@ export function describeConnectError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const lower = msg.toLowerCase();
 
+  if (msg.includes("LOCALHOST_SPHERE_BLOCKED") || (lower.includes("cloudfront") && lower.includes("403"))) {
+    return "Sphere’s hosted wallet blocks localhost. Install the Sphere browser extension, use a public HTTPS URL (Vercel/ngrok), or connect with Demo wallet.";
+  }
   if (lower.includes("popup") && (lower.includes("blocker") || lower.includes("failed to open"))) {
     return "Allow popups for this site, then tap Connect again. Sphere opens in a wallet window.";
   }
