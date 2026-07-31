@@ -6,7 +6,7 @@ import { m } from "framer-motion";
 import { api } from "@/lib/api";
 import { cachedMintsFor, rememberMint, removeCachedMint } from "@/lib/mintCache";
 import { useToast } from "@/lib/toast";
-import { shortPrincipal, useWallet } from "@/lib/wallet";
+import { useWallet } from "@/lib/wallet";
 import { DROP_COVER_FALLBACKS } from "@/lib/media";
 import { fadeUp, springSnappy } from "@/lib/motion";
 
@@ -47,9 +47,20 @@ function mergeRows(...lists: TokenRow[][]): TokenRow[] {
   return [...map.values()].sort((x, y) => y.mintedAt.localeCompare(x.mintedAt));
 }
 
+function formatMintedAt(iso: string) {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(iso));
+  } catch {
+    return new Date(iso).toLocaleString();
+  }
+}
+
 export default function WalletPage() {
   const toast = useToast();
-  const { principal, displayName, token, connectSphere, connecting } = useWallet();
+  const { principal, token, connectSphere, connecting } = useWallet();
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -71,7 +82,6 @@ export default function WalletPage() {
     const remoteLists: TokenRow[][] = [];
     let lastError: string | null = null;
 
-    // Public inventory (proven path for this mint) — always try first, no nametag filter.
     try {
       const r = await api.walletTokens(sessionPrincipal);
       remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
@@ -79,7 +89,6 @@ export default function WalletPage() {
       lastError = e instanceof Error ? e.message : "Could not load mints";
     }
 
-    // Authenticated list as a second source (merge, never replace).
     if (token) {
       try {
         const r = await api.myTokens(token);
@@ -136,7 +145,7 @@ export default function WalletPage() {
 
     const confirmed = await toast.confirmAndRun({
       title: `Send ${row.collectionName} #${row.tokenId}?`,
-      message: `This moves the mint on Unipad to ${to}. You won’t see it in My mints afterward.`,
+      message: `This moves the mint to ${to}. It will leave your My mints list.`,
       confirmLabel: "Send mint",
       cancelLabel: "Cancel",
       run: async () => {
@@ -209,15 +218,8 @@ export default function WalletPage() {
       transition={{ duration: 0.4 }}
     >
       <div className="shell">
-        <div className="section-head">
-          <div>
-            <h2>My mints</h2>
-            <p>
-              {displayName && !/^[0-9a-f]{64,66}$/i.test(displayName)
-                ? displayName
-                : shortPrincipal(sessionPrincipal)}
-            </p>
-          </div>
+        <div className="section-head mint-head">
+          <h2>My mints</h2>
           <button
             type="button"
             className="btn btn-ghost"
@@ -249,32 +251,28 @@ export default function WalletPage() {
             )}
           </div>
         ) : (
-          <div className="grid-drops">
+          <div className="grid-drops mint-grid">
             {tokens.map((t) => {
               const key = `${t.collectionId}:${t.tokenId}`;
               const busy = sendingKey === key;
               const cover =
                 t.coverUrl || DROP_COVER_FALLBACKS[t.tokenId % DROP_COVER_FALLBACKS.length];
               return (
-                <div key={key} className="drop-tile mint-owned">
-                  <Link href={`/drops/${t.slug}`} className="drop-media">
+                <article key={key} className="mint-card-owned">
+                  <Link href={`/drops/${t.slug}`} className="mint-card-media">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={cover} alt="" loading="lazy" />
                   </Link>
-                  <div className="drop-meta">
-                    <div>
-                      <h3>
-                        {t.collectionName} #{t.tokenId}
-                      </h3>
-                      <div className="muted">{new Date(t.mintedAt).toLocaleString()}</div>
-                    </div>
+                  <div className="mint-card-body">
+                    <h3>
+                      {t.collectionName} #{t.tokenId}
+                    </h3>
+                    <p className="mint-card-date">{formatMintedAt(t.mintedAt)}</p>
                     <div className="mint-send">
-                      <label className="sr-only" htmlFor={`to-${key}`}>
-                        Recipient
-                      </label>
                       <input
                         id={`to-${key}`}
                         type="text"
+                        aria-label="Recipient"
                         placeholder="@nametag or chain pubkey"
                         value={recipientDraft[key] ?? ""}
                         disabled={busy}
@@ -293,11 +291,8 @@ export default function WalletPage() {
                         {busy ? "Sending…" : "Send"}
                       </button>
                     </div>
-                    <p className="hint" style={{ marginTop: 8 }}>
-                      Send to another Sphere @nametag or their 66-char chain pubkey.
-                    </p>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
