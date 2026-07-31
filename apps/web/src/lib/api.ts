@@ -11,7 +11,23 @@ import type {
 } from "@unipad/shared";
 import { ApiError } from "@/lib/errors";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787";
+/**
+ * Local: Hono API on :8787.
+ * Production (Vercel): same-origin Next routes under /v1/* (+ Blob uploads).
+ */
+function resolveApiUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (configured) return configured.replace(/\/$/, "");
+  if (process.env.NEXT_PUBLIC_VERCEL_URL) {
+    return `https://${process.env.NEXT_PUBLIC_VERCEL_URL.replace(/\/$/, "")}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/\/$/, "")}`;
+  }
+  return "http://localhost:8787";
+}
+
+const API_URL = resolveApiUrl();
 
 async function request<T>(
   path: string,
@@ -93,16 +109,33 @@ export const api = {
       "/v1/creators/me/royalties",
       { token },
     ),
+  /** Prefer Vercel Blob client upload for covers; falls back to API multipart. */
   uploadMedia: async (token: string, file: File, collectionId?: string) => {
-    const form = new FormData();
-    form.append("file", file);
-    if (collectionId) form.append("collectionId", collectionId);
-    return request<MediaUploadResult>("/v1/media/upload", {
-      method: "POST",
-      token,
-      json: false,
-      body: form,
-    });
+    try {
+      const { upload } = await import("@vercel/blob/client");
+      const blob = await upload(`covers/${file.name}`, file, {
+        access: "public",
+        // Always same-origin Next route so covers land in Vercel Blob.
+        handleUploadUrl: "/v1/media/upload",
+        contentType: file.type || "application/octet-stream",
+      });
+      return {
+        id: blob.pathname,
+        url: blob.url,
+        contentHash: blob.pathname,
+        deduped: false,
+      } satisfies MediaUploadResult;
+    } catch {
+      const form = new FormData();
+      form.append("file", file);
+      if (collectionId) form.append("collectionId", collectionId);
+      return request<MediaUploadResult>("/v1/media/upload", {
+        method: "POST",
+        token,
+        json: false,
+        body: form,
+      });
+    }
   },
   mintIntent: (token: string, id: string) =>
     request<MintIntentResponse>(`/v1/collections/${id}/mint-intent`, {

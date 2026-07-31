@@ -4,6 +4,8 @@
 
 Unipad is an NFT launchpad built for the **Unicity** network. Creators can publish drops. Buyers can mint NFTs and pay with **UCT** (Unicity Token).
 
+**Live site:** [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
+
 ---
 
 ## 1. What Unipad Does
@@ -23,7 +25,7 @@ There are no gas wars. Payment happens first in UCT. Unipad then finishes the mi
 |------|----------------|
 | Creators | Launch drops, set prices, view earnings |
 | Collectors | Browse live drops and mint with UCT |
-| Developers | Run the app locally or deploy the web app on Vercel |
+| Developers | Run the app locally or use the live site on [Vercel](https://unipadnfts.vercel.app) |
 
 ---
 
@@ -131,17 +133,24 @@ Point `NEXT_PUBLIC_API_URL` / `PUBLIC_API_URL` at `http://localhost:8080` when u
 
 ## 8. Deploy the Website on Vercel
 
-1. Import this repository into Vercel.
-2. Set the **Root Directory** to `apps/web`.
+Production storefront: [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
+
+The GitHub `main` branch is connected to Vercel. Pushes to `main` redeploy automatically. Project settings use **Root Directory** `apps/web` and monorepo install/build from the repo root.
+
+To recreate or update the deployment:
+
+1. Import this repository into Vercel (or use the linked project).
+2. Keep **Root Directory** as `apps/web`.
 3. Add the environment variables below.
-4. Deploy.
-5. Open the site and click **Connect Sphere**. Allow the popup if the browser asks.
+4. Deploy (or push to `main`).
+5. Open [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app) and click **Connect Sphere**. Allow the popup if the browser asks.
 
 ### Website environment variables
 
 | Variable | Meaning | Example |
 |----------|---------|---------|
-| `NEXT_PUBLIC_API_URL` | Your API base URL | `https://your-api.example.com` |
+| `NEXT_PUBLIC_SITE_URL` | Public site URL | `https://unipadnfts.vercel.app` |
+| `NEXT_PUBLIC_API_URL` | API / storefront data origin | `https://unipadnfts.vercel.app` (same-origin `/v1`) |
 | `NEXT_PUBLIC_WS_URL` | WebSocket URL for live updates | `wss://your-api.example.com` |
 | `NEXT_PUBLIC_SPHERE_WALLET_URL` | Sphere wallet URL | `https://sphere.unicity.network` |
 | `NEXT_PUBLIC_UCT_COIN_ID` | Official UCT coin id | See `.env.example` |
@@ -152,8 +161,8 @@ Point `NEXT_PUBLIC_API_URL` / `PUBLIC_API_URL` at `http://localhost:8080` when u
 
 | Variable | Meaning |
 |----------|---------|
-| `FRONTEND_ORIGIN` | Your Vercel site URL (for CORS) |
-| `AUTH_DOMAIN` | Your site hostname (no `https://`) |
+| `FRONTEND_ORIGIN` | Vercel site URL for CORS (`https://unipadnfts.vercel.app`) |
+| `AUTH_DOMAIN` | Site hostname (`unipadnfts.vercel.app`) |
 | `TREASURY_PRINCIPAL` | Sphere account that receives mint payments |
 | `JWT_SECRET` | Strong secret for login sessions |
 | `UNIPAD_DEV_MOCK` | Set to `false` in production |
@@ -203,6 +212,7 @@ Point `NEXT_PUBLIC_API_URL` / `PUBLIC_API_URL` at `http://localhost:8080` when u
 
 This project is the Unipad MVP codebase for Unicity.
 
-Repository: [https://github.com/kendacki/Unipad](https://github.com/kendacki/Unipad)
+- Live site: [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
+- Repository: [https://github.com/kendacki/Unipad](https://github.com/kendacki/Unipad)
 
 </div>

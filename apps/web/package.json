@@ -10,8 +10,9 @@
     "favicon": "node scripts/gen-favicon.mjs"
   },
   "dependencies": {
-    "@unipad/shared": "workspace:*",
     "@unicitylabs/sphere-sdk": "0.13.1",
+    "@unipad/shared": "workspace:*",
+    "@vercel/blob": "^2.6.1",
     "next": "^15.2.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -20,8 +21,8 @@
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
-    "typescript": "~5.7.0",
     "eslint": "^9.22.0",
-    "eslint-config-next": "^15.2.4"
+    "eslint-config-next": "^15.2.4",
+    "typescript": "~5.7.0"
   }
 }

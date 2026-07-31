@@ -98,13 +98,10 @@ export default function LaunchPage() {
 
   async function onCoverFile(file: File | null) {
     if (!file) return;
-    const t = sessionToken(token);
-    if (!t) {
-      toast.error(new Error("Connect"));
-      return;
-    }
     setUploading(true);
     try {
+      // Covers go to Vercel Blob (same-origin /v1/media/upload). Wallet optional for upload.
+      const t = sessionToken(token) ?? "blob";
       const saved = await api.uploadMedia(t, file);
       setCoverUrl(saved.url);
       toast.success("Image uploaded");
