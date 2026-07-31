@@ -525,7 +525,7 @@ export async function getMintStatus(
 
 export async function listWalletTokens(
   principal: string,
-  opts?: { nametag?: string | null },
+  opts?: { nametag?: string | null; forceScan?: boolean },
 ): Promise<StoredToken[]> {
   const owner = normalizePrincipal(principal);
   const nametag = opts?.nametag?.trim() || null;
@@ -541,19 +541,33 @@ export async function listWalletTokens(
   const prefixes = new Set<string>();
   prefixes.add(`mints/wallets/${encodeURIComponent(owner).slice(0, 120)}/`);
   if (nametag) {
-    const tag = normalizeSphereRecipient(nametag);
-    prefixes.add(`mints/wallets/${encodeURIComponent(tag).slice(0, 120)}/`);
+    try {
+      const tag = normalizeSphereRecipient(nametag);
+      prefixes.add(`mints/wallets/${encodeURIComponent(tag).slice(0, 120)}/`);
+    } catch {
+      /* ignore bad nametag */
+    }
   }
 
-  let tokens: StoredToken[] = [];
+  let indexed: StoredToken[] = [];
   for (const prefix of prefixes) {
-    tokens = tokens.concat(await listJsonUnder<StoredToken>(prefix));
+    try {
+      indexed = indexed.concat(await listJsonUnder<StoredToken>(prefix));
+    } catch {
+      /* continue other prefixes */
+    }
   }
-  tokens = tokens.filter((t) => ownersMatch(t.ownerPrincipal, owner, nametag));
+  indexed = indexed.filter((t) => ownersMatch(t.ownerPrincipal, owner, nametag));
 
-  // Repair path: token files exist but wallet index was missing / wrong principal key.
-  if (tokens.length === 0) {
-    const all = await listJsonUnder<StoredToken>("mints/tokens/");
+  // Always scan token files for this owner when asked (My mints) or when index empty.
+  // Fixes missing wallet-index blobs after successful mint.
+  if (opts?.forceScan || indexed.length === 0) {
+    let all: StoredToken[] = [];
+    try {
+      all = await listJsonUnder<StoredToken>("mints/tokens/");
+    } catch {
+      all = [];
+    }
     const owned = all.filter((t) => ownersMatch(t.ownerPrincipal, owner, nametag));
     for (const t of owned) {
       try {
@@ -566,10 +580,10 @@ export async function listWalletTokens(
         /* best-effort repair */
       }
     }
-    return dedupeTokens(owned);
+    return dedupeTokens([...indexed, ...owned]);
   }
 
-  return dedupeTokens(tokens);
+  return dedupeTokens(indexed);
 }
 
 /**

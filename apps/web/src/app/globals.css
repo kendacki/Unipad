@@ -1048,6 +1048,13 @@ h3,
   overflow: hidden;
 }
 
+.mint-owned .drop-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .mint-send {
   display: grid;
   grid-template-columns: 1fr auto;

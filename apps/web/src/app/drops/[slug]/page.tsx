@@ -13,6 +13,7 @@ import { formatLaunchAt } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
+import { rememberMint } from "@/lib/mintCache";
 import { DROP_DETAIL_FALLBACKS } from "@/lib/media";
 import { fadeUp, scaleIn, springSnappy } from "@/lib/motion";
 
@@ -289,6 +290,18 @@ export default function DropDetailPage() {
       } else if (mintResult.status === "confirmed") {
         setStage("done");
         toast.success("Mint complete", `You got #${mintResult.tokenId}.`);
+        if (principal && mintResult.tokenId != null) {
+          rememberMint({
+            collectionId: collection.id,
+            collectionName: collection.name,
+            slug: collection.slug,
+            coverUrl: collection.coverUrl,
+            tokenId: mintResult.tokenId,
+            mintTxRef: mintResult.mintTxRef || "",
+            mintedAt: new Date().toISOString(),
+            ownerPrincipal: principal,
+          });
+        }
       } else {
         setStage("ready");
         toast.error(new Error(mintResult.reason || "Mint failed"));

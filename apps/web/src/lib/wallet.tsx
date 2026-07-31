@@ -101,8 +101,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(STORAGE_KEY);
         return;
       }
+      const principal = (parsed.principal || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^0x/, "");
+      if (!principal) {
+        localStorage.removeItem(STORAGE_KEY);
+        return;
+      }
       setToken(parsed.token);
-      setPrincipal(parsed.principal);
+      setPrincipal(principal);
       setDisplayName(parsed.displayName ?? null);
     } catch {
       /* ignore */
@@ -110,9 +118,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const persist = useCallback((session: Omit<Stored, "mock">) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    const principal = session.principal.trim().toLowerCase().replace(/^0x/, "");
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...session, principal }),
+    );
     setToken(session.token);
-    setPrincipal(session.principal);
+    setPrincipal(principal);
     setDisplayName(session.displayName ?? null);
   }, []);
 

@@ -12,10 +12,10 @@ import type {
 import { ApiError } from "@/lib/errors";
 
 /**
- * Browser: always same-origin `/v1/*` so mint inventory matches this deployment’s ledger.
- * Server / SSR: prefer configured URL, then Vercel URL, then local Hono.
+ * Resolve API base per request (never cache at module load).
+ * Browser → same-origin so My mints hits this deployment’s ledger.
  */
-function resolveApiUrl(): string {
+function apiUrl(): string {
   if (typeof window !== "undefined") return "";
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (configured) return configured.replace(/\/$/, "");
@@ -28,8 +28,6 @@ function resolveApiUrl(): string {
   return "http://localhost:8787";
 }
 
-const API_URL = resolveApiUrl();
-
 async function request<T>(
   path: string,
   init: RequestInit & { token?: string; json?: boolean } = {},
@@ -37,7 +35,7 @@ async function request<T>(
   const { token, headers, json = true, ...rest } = init;
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    res = await fetch(`${apiUrl()}${path}`, {
       ...rest,
       headers: {
         ...(json ? { "Content-Type": "application/json" } : {}),
@@ -221,4 +219,8 @@ export const api = {
     }),
 };
 
-export { API_URL };
+export { apiUrl as resolveApiUrl };
+/** @deprecated use resolveApiUrl() — kept for WS base fallback */
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
+  (typeof window !== "undefined" ? "" : "http://localhost:8787");

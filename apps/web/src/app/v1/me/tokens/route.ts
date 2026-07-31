@@ -13,7 +13,10 @@ export async function GET(request: Request) {
   try {
     const session = await requireAuth(request.headers.get("Authorization"));
     const nametag = new URL(request.url).searchParams.get("nametag");
-    const tokens = await listWalletTokens(session.principal, { nametag });
+    const tokens = await listWalletTokens(session.principal, {
+      nametag,
+      forceScan: true,
+    });
     return NextResponse.json({
       principal: session.principal,
       tokens: tokens.map((t) => ({
