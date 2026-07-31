@@ -280,7 +280,7 @@ export default function LaunchPage() {
         <m.div className="section-head" variants={fadeUp} initial="hidden" animate="show">
           <div>
             <h2>Create a drop</h2>
-            <p>Name it, set a UCT price, then publish. Buyers pay first — then they get their NFT.</p>
+            <p>Name it, set a UCT price, then publish.</p>
           </div>
         </m.div>
 
