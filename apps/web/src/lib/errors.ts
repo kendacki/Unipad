@@ -82,6 +82,11 @@ const CATALOG: Record<string, ErrorInfo> = {
     title: "Not found",
     message: "We couldn’t find that collection or request.",
   },
+  UPAD_AUTH_FAILED: {
+    code: "UPAD_AUTH_FAILED",
+    title: "Wallet sign-in failed",
+    message: "Sphere connected, but Unipad couldn’t finish sign-in. Try Connect again.",
+  },
   UPAD_IDEMPOTENCY: {
     code: "UPAD_IDEMPOTENCY",
     title: "Missing request id",
@@ -111,10 +116,18 @@ const MESSAGE_TO_CODE: Array<[RegExp | string, string]> = [
   ["Idempotency-Key", "UPAD_IDEMPOTENCY"],
   ["Not found", "UPAD_NOT_FOUND"],
   ["Unknown mint intent", "UPAD_NOT_FOUND"],
+  ["Unknown or already-used nonce", "UPAD_AUTH_FAILED"],
+  ["Challenge expired", "UPAD_AUTH_FAILED"],
+  ["Signature verification failed", "UPAD_AUTH_FAILED"],
+  ["Malformed signature", "UPAD_AUTH_FAILED"],
+  ["Signature pubkey mismatch", "UPAD_AUTH_FAILED"],
+  ["Invalid challenge", "UPAD_AUTH_FAILED"],
+  ["chainPubkey", "UPAD_VALIDATION"],
   ["Missing bearer", "UPAD_UNAUTHORIZED"],
   ["Invalid or expired", "UPAD_UNAUTHORIZED"],
   ["Forbidden", "UPAD_FORBIDDEN"],
   ["Connect your wallet", "UPAD_UNAUTHORIZED"],
+  ["Could not connect to Sphere", "UPAD_AUTH_FAILED"],
 ];
 
 export class ApiError extends Error {
@@ -141,9 +154,22 @@ export function resolveError(
     return { ...CATALOG[code], message: rawMessage || CATALOG[code].message };
   }
 
-  if (status === 401) return CATALOG.UPAD_UNAUTHORIZED;
+  if (status === 401) {
+    const fromMsg = matchMessage(rawMessage);
+    if (fromMsg) return fromMsg;
+    return CATALOG.UPAD_UNAUTHORIZED;
+  }
   if (status === 429) return CATALOG.UPAD_RATE_LIMIT;
-  if (status === 404) return CATALOG.UPAD_NOT_FOUND;
+  // Only treat 404 as collection-not-found when the body says so —
+  // bare Next.js route misses used to look like "collection missing" during auth.
+  if (status === 404) {
+    const fromMsg = matchMessage(rawMessage);
+    if (fromMsg) return fromMsg;
+    if (rawMessage && /collection|mint|drop/i.test(rawMessage)) {
+      return CATALOG.UPAD_NOT_FOUND;
+    }
+    return CATALOG.UPAD_AUTH_FAILED;
+  }
   if (status === 403) {
     const fromMsg = matchMessage(rawMessage);
     if (fromMsg) return fromMsg;

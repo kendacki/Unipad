@@ -12,6 +12,7 @@ import {
 } from "react";
 import { formatUct } from "@unipad/shared";
 import { api } from "./api";
+import { ApiError } from "./errors";
 import { paymentRefFromSendResult, POPUP_SESSION_KEY } from "./sphere";
 import {
   INTENT_ACTIONS,
@@ -140,7 +141,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       });
     } catch (err) {
       await clearSphere();
-      throw new Error(describeConnectError(err));
+      // Keep structured API errors (auth/network) so toasts show the right code.
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(describeConnectError(err), {
+        code: "UPAD_UNAUTHORIZED",
+        status: 401,
+      });
     } finally {
       setConnecting(false);
     }
