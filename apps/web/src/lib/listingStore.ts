@@ -278,7 +278,8 @@ export async function createListing(
     name,
     description: (input.description ?? "").slice(0, 2000),
     creatorPrincipal: principal,
-    creatorDisplayName: creatorDisplayName(principal),
+    creatorDisplayName:
+      input.creatorDisplayName?.trim().slice(0, 80) || creatorDisplayName(principal),
     coverUrl: input.coverUrl?.trim() || null,
     status: "draft",
     totalSupply: input.totalSupply,

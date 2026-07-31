@@ -94,6 +94,8 @@ export interface CreateCollectionInput {
   totalSupply: number;
   royaltyBps: number;
   coverUrl?: string;
+  /** Optional public creator / studio name shown on the drop. */
+  creatorDisplayName?: string;
   launchAt?: string | null;
   phases: Array<{
     type: PhaseType;

@@ -71,6 +71,7 @@ export default function LaunchPage() {
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [ownerName, setOwnerName] = useState("");
   const [description, setDescription] = useState("");
   const [coverUrl, setCoverUrl] = useState("");
   const [totalSupply, setTotalSupply] = useState(100);
@@ -144,9 +145,14 @@ export default function LaunchPage() {
       toast.error(new Error("Give your drop a name (at least 2 characters)."));
       return;
     }
+    const trimmedOwner = ownerName.trim();
+    if (trimmedOwner.length < 2) {
+      toast.error(new Error("Enter the owner’s name (at least 2 characters)."));
+      return;
+    }
     const finalSlug = (slug || slugify(trimmedName)).trim().toLowerCase();
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(finalSlug)) {
-      toast.error(new Error("Slug must be lowercase letters, numbers, and hyphens."));
+      toast.error(new Error("Drop name must produce a valid link (letters and numbers)."));
       return;
     }
     if (!Number.isInteger(totalSupply) || totalSupply < 1 || totalSupply > 100_000) {
@@ -210,6 +216,7 @@ export default function LaunchPage() {
         totalSupply,
         royaltyBps,
         coverUrl: coverUrl || undefined,
+        creatorDisplayName: trimmedOwner,
         launchAt,
         phases: parsedPhases,
       });
@@ -372,8 +379,12 @@ export default function LaunchPage() {
               />
             </label>
             <label>
-              Owner's name
-              <input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} />
+              Owner&apos;s name
+              <input
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                placeholder="Your name or studio"
+              />
             </label>
             <label>
               Short description
@@ -400,7 +411,7 @@ export default function LaunchPage() {
             <button
               type="button"
               className="btn btn-signal"
-              disabled={!name || !slug}
+              disabled={!name.trim() || !ownerName.trim()}
               onClick={() => setStep(1)}
             >
               Next: price
