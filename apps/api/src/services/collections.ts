@@ -349,8 +349,12 @@ export async function getCreatorRoyalties(principal: string) {
 
   let accrued = 0n;
   let paid = 0n;
+  let gross = 0n;
+  let fees = 0n;
   for (const r of rows) {
     const net = BigInt(r.creator_net_uct);
+    gross += BigInt(r.gross_uct);
+    fees += BigInt(r.platform_fee_uct);
     if (r.payout_status === "paid") paid += net;
     else accrued += net;
   }
@@ -360,6 +364,9 @@ export async function getCreatorRoyalties(principal: string) {
       accruedUct: accrued.toString(),
       paidUct: paid.toString(),
       platformFeeBps: env.platformFeeBps,
+      grossSalesUct: gross.toString(),
+      platformFeesUct: fees.toString(),
+      saleCount: rows.length,
     },
     entries: rows.map((r) => ({
       id: r.id,

@@ -112,6 +112,11 @@ export interface RoyaltySummary {
   accruedUct: string;
   paidUct: string;
   platformFeeBps: number;
+  /** Sum of mint sale prices (before fee). */
+  grossSalesUct: string;
+  /** Sum of platform fees taken (e.g. 2.5% → @cryptzarr). */
+  platformFeesUct: string;
+  saleCount: number;
 }
 
 export interface RoyaltyEntry {

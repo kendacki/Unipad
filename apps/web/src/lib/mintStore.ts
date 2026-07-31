@@ -20,6 +20,7 @@ import {
   ListingHttpError,
   pickActivePhase,
 } from "@/lib/listingStore";
+import { recordMintSale } from "@/lib/earningsStore";
 
 export type StoredIntent = {
   idempotencyKey: string;
@@ -654,6 +655,20 @@ export async function submitMint(params: {
   intent.tokenId = token.tokenId;
   intent.mintTxRef = token.mintTxRef;
   await saveIntent(intent);
+
+  try {
+    await recordMintSale({
+      creatorPrincipal: collection.creatorPrincipal,
+      collectionId: collection.id,
+      collectionName: collection.name,
+      saleId: intent.idempotencyKey,
+      grossUct: intent.priceUct,
+      buyerPrincipal: walletPrincipal,
+      tokenId: token.tokenId,
+    });
+  } catch {
+    // Mint already settled — earnings ledger is best-effort accounting.
+  }
 
   return {
     status: "confirmed",
