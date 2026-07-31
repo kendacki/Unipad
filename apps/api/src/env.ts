@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
+import { DEFAULT_TREASURY_PRINCIPAL, normalizeSphereRecipient } from "@unipad/shared";
 
 // Prefer repo-root .env when running from apps/api
 loadEnv({ path: resolve(process.cwd(), "../../.env") });
@@ -14,7 +15,10 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET ?? "dev-only-change-me-unipad",
   authDomain: process.env.AUTH_DOMAIN ?? "localhost",
   frontendOrigin: process.env.FRONTEND_ORIGIN ?? "http://localhost:3000",
-  treasuryPrincipal: process.env.TREASURY_PRINCIPAL ?? "@cryptzarr",
+  /** Sphere Unicity ID — always `@nametag` (CONNECT.md). Display forms like name@unicity are normalized. */
+  treasuryPrincipal: normalizeSphereRecipient(
+    process.env.TREASURY_PRINCIPAL ?? DEFAULT_TREASURY_PRINCIPAL,
+  ),
   platformFeeBps: Number(process.env.PLATFORM_FEE_BPS ?? 250),
   mintConcurrency: Number(process.env.MINT_CONCURRENCY ?? 8),
   creatorRateLimitStrict: process.env.CREATOR_RATE_LIMIT_STRICT !== "false",

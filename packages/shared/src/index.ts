@@ -143,6 +143,40 @@ export const UCT_DECIMALS = 18;
 export const UCT_COIN_ID =
   "455ad8720656b08e8dbd5bac1f3c73eeea5431565f6c1c3af742b1aa12d41d89";
 
+/**
+ * Normalize a Unicity payment recipient for Sphere `send` / Connect intents.
+ *
+ * Official Sphere format is `@nametag` (see CONNECT.md: `to: '@alice'`).
+ * Also accepts bare nametags, `name@unicity` display forms, DIRECT://, and hex pubkeys.
+ */
+export function normalizeSphereRecipient(raw: string): string {
+  const value = raw.trim();
+  if (!value) return value;
+
+  if (value.startsWith("DIRECT://") || /^(PROXY|DIRECT):/i.test(value)) {
+    return value;
+  }
+  if (/^[0-9a-f]{64,66}$/i.test(value)) {
+    return value.toLowerCase();
+  }
+
+  // Display forms like cryptzarr@unicity or cryptzarr@unicity.network → cryptzarr
+  const atUnicity = value.match(/^@?([a-z0-9_-]{3,32})@unicity(?:\.[a-z0-9.-]+)?$/i);
+  if (atUnicity) {
+    return `@${atUnicity[1].toLowerCase()}`;
+  }
+
+  const nametag = value.replace(/^@+/, "").trim().toLowerCase();
+  if (/^[a-z0-9_+-]{3,32}$/.test(nametag) || /^\+[0-9]{7,15}$/.test(nametag)) {
+    return `@${nametag}`;
+  }
+
+  return value.startsWith("@") ? value : `@${value}`;
+}
+
+/** Default Unipad treasury Unicity ID (Sphere nametag). */
+export const DEFAULT_TREASURY_PRINCIPAL = "@cryptzarr";
+
 export function formatUct(baseUnits: string | number, decimals = UCT_DECIMALS): string {
   const raw = typeof baseUnits === "number" ? BigInt(baseUnits) : BigInt(baseUnits || "0");
   const zero = BigInt(0);

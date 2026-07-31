@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { formatUct } from "@unipad/shared";
+import { formatUct, normalizeSphereRecipient } from "@unipad/shared";
 import { api } from "./api";
 import { ApiError } from "./errors";
 import { paymentRefFromSendResult, POPUP_SESSION_KEY } from "./sphere";
@@ -164,11 +164,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         throw new Error("Reconnect Sphere wallet to pay in UCT");
       }
 
-      const to = params.recipient.startsWith("@")
-        ? params.recipient
-        : params.recipient.startsWith("DIRECT://") || /^[0-9a-f]{66}$/i.test(params.recipient)
-          ? params.recipient
-          : `@${params.recipient}`;
+      const to = normalizeSphereRecipient(params.recipient);
 
       const coinId =
         params.coinIdHex && /^[0-9a-f]{64}$/i.test(params.coinIdHex)

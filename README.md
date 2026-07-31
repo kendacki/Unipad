@@ -163,7 +163,7 @@ To recreate or update the deployment:
 |----------|---------|
 | `FRONTEND_ORIGIN` | Vercel site URL for CORS (`https://unipadnfts.vercel.app`) |
 | `AUTH_DOMAIN` | Site hostname (`unipadnfts.vercel.app`) |
-| `TREASURY_PRINCIPAL` | Sphere account that receives mint payments and platform fees (`@cryptzarr`) |
+| `TREASURY_PRINCIPAL` | Sphere Unicity ID that receives mint payments and platform fees. Official format: `@cryptzarr` (not `cryptzarr@unicity`). |
 | `JWT_SECRET` | Strong secret for login sessions |
 | `UNIPAD_DEV_MOCK` | Set to `false` in production |
 | `REDIS_URL` | Required in production for shared rate-limit buckets across replicas |

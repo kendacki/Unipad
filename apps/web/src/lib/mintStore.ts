@@ -6,7 +6,9 @@
 import { list, put } from "@vercel/blob";
 import { nanoid } from "nanoid";
 import {
+  DEFAULT_TREASURY_PRINCIPAL,
   UCT_COIN_ID,
+  normalizeSphereRecipient,
   type Collection,
   type MintIntentResponse,
   type MintResult,
@@ -70,7 +72,9 @@ function useBlob(): boolean {
 }
 
 function treasuryPrincipal(): string {
-  return process.env.TREASURY_PRINCIPAL?.trim() || "@cryptzarr";
+  return normalizeSphereRecipient(
+    process.env.TREASURY_PRINCIPAL?.trim() || DEFAULT_TREASURY_PRINCIPAL,
+  );
 }
 
 function uctCoinIdHex(): string {

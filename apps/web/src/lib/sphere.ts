@@ -4,6 +4,8 @@
  * - https://github.com/unicitynetwork/unicity-ids (testnet asset registry)
  */
 
+export { normalizeSphereRecipient } from "@unipad/shared";
+
 /** Canonical UCT fungible coin id on Unicity testnet (64-hex, lowercase). */
 export const UCT_COIN_ID =
   process.env.NEXT_PUBLIC_UCT_COIN_ID ??
