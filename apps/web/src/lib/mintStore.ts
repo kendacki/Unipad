@@ -70,7 +70,7 @@ function useBlob(): boolean {
 }
 
 function treasuryPrincipal(): string {
-  return process.env.TREASURY_PRINCIPAL?.trim() || "@unipad";
+  return process.env.TREASURY_PRINCIPAL?.trim() || "@cryptzarr";
 }
 
 function uctCoinIdHex(): string {

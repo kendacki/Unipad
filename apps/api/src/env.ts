@@ -14,7 +14,7 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET ?? "dev-only-change-me-unipad",
   authDomain: process.env.AUTH_DOMAIN ?? "localhost",
   frontendOrigin: process.env.FRONTEND_ORIGIN ?? "http://localhost:3000",
-  treasuryPrincipal: process.env.TREASURY_PRINCIPAL ?? "@unipad",
+  treasuryPrincipal: process.env.TREASURY_PRINCIPAL ?? "@cryptzarr",
   platformFeeBps: Number(process.env.PLATFORM_FEE_BPS ?? 250),
   mintConcurrency: Number(process.env.MINT_CONCURRENCY ?? 8),
   creatorRateLimitStrict: process.env.CREATOR_RATE_LIMIT_STRICT !== "false",
