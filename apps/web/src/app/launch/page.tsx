@@ -372,7 +372,7 @@ export default function LaunchPage() {
               />
             </label>
             <label>
-              Link name
+              Owner's name
               <input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} />
             </label>
             <label>
