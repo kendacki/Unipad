@@ -1,7 +1,19 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { DropGrid } from "@/components/DropGrid";
 import { CARTOON_CHARACTERS } from "@/lib/media";
+
+export const metadata: Metadata = {
+  title: "Unipad — Launch & mint NFTs on Unicity",
+  description:
+    "Create a drop or mint an NFT with UCT. Fair minting on Unicity — no gas wars.",
+  openGraph: {
+    title: "Unipad — Launch & mint NFTs on Unicity",
+    description:
+      "Create a drop or mint an NFT with UCT. Fair minting on Unicity — no gas wars.",
+  },
+};
 
 export default function HomePage() {
   return (
