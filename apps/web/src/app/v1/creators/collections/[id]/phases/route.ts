@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { AuthError, requireAuth } from "@/lib/auth/requireAuth";
-import { ListingHttpError, publishListing } from "@/lib/listingStore";
+import { ListingHttpError, replaceListingPhases } from "@/lib/listingStore";
+import type { CreateCollectionInput } from "@unipad/shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,12 +24,19 @@ function handleErr(err: unknown) {
   );
 }
 
-export async function POST(request: Request, ctx: Ctx) {
+export async function PATCH(request: Request, ctx: Ctx) {
   try {
     const session = await requireAuth(request.headers.get("Authorization"));
     const { id } = await ctx.params;
-    const published = await publishListing(session.principal, id);
-    return NextResponse.json(published);
+    const body = (await request.json()) as { phases?: CreateCollectionInput["phases"] };
+    if (!body.phases?.length) {
+      return NextResponse.json(
+        { error: "phases required", code: "UPAD_VALIDATION" },
+        { status: 400 },
+      );
+    }
+    const updated = await replaceListingPhases(session.principal, id, body.phases);
+    return NextResponse.json(updated);
   } catch (err) {
     return handleErr(err);
   }

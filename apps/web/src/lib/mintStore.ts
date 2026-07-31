@@ -14,7 +14,12 @@ import {
   type MintResult,
   type MintStatus,
 } from "@unipad/shared";
-import { getCatalogCollection } from "@/lib/catalog";
+import {
+  assertAllowlisted,
+  getResolvedCollection,
+  ListingHttpError,
+  pickActivePhase,
+} from "@/lib/listingStore";
 
 export type StoredIntent = {
   idempotencyKey: string;
@@ -253,7 +258,13 @@ export async function withLiveSupply(collection: Collection): Promise<Collection
   const remainingSupply = Math.max(0, collection.totalSupply - mintedCount);
   let status = collection.status;
   if (remainingSupply === 0 && mintedCount > 0) status = "sold_out";
-  return { ...collection, mintedCount, remainingSupply, status };
+  return {
+    ...collection,
+    mintedCount,
+    remainingSupply,
+    status,
+    activePhase: pickActivePhase(collection.phases),
+  };
 }
 
 async function countOwned(collectionId: string, walletPrincipal: string): Promise<number> {
@@ -423,7 +434,7 @@ export async function createMintIntent(
 ): Promise<MintIntentResponse> {
   assertPersistentLedger();
   const principal = normalizePrincipal(walletPrincipal);
-  const base = getCatalogCollection(collectionIdOrSlug);
+  const base = await getResolvedCollection(collectionIdOrSlug);
   if (!base) throw new MintHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
 
   const collection = await withLiveSupply(base);
@@ -438,11 +449,50 @@ export async function createMintIntent(
     throw new MintHttpError("Sold out", 409, "UPAD_SOLD_OUT");
   }
 
-  const phase = collection.activePhase ?? collection.phases[0];
-  if (!phase) throw new MintHttpError("No active mint phase", 400, "UPAD_NO_PHASE");
+  const now = Date.now();
+  const timed = collection.phases.filter((p) => {
+    const startOk = !p.startsAt || new Date(p.startsAt).getTime() <= now;
+    const endOk = !p.endsAt || new Date(p.endsAt).getTime() > now;
+    return startOk && endOk;
+  });
+  const ranked = [...(timed.length ? timed : collection.phases)].sort((a, b) => {
+    const rank = (t: string) => (t === "creator" ? 0 : t === "allowlist" ? 1 : 2);
+    return rank(a.type) - rank(b.type);
+  });
+
+  let phase = null as (typeof collection.phases)[number] | null;
+  let phaseCap = 1;
+  let lastAllowlistError: ListingHttpError | null = null;
+  for (const candidate of ranked) {
+    try {
+      const al = await assertAllowlisted(collection.id, principal, candidate);
+      phase = candidate;
+      phaseCap = al ? Math.min(candidate.maxPerWallet, al.maxMints) : candidate.maxPerWallet;
+      break;
+    } catch (err) {
+      if (err instanceof ListingHttpError && err.code === "UPAD_NOT_ALLOWLISTED") {
+        lastAllowlistError = err;
+        continue;
+      }
+      if (err instanceof ListingHttpError) {
+        throw new MintHttpError(err.message, err.status, err.code);
+      }
+      throw err;
+    }
+  }
+  if (!phase) {
+    if (lastAllowlistError) {
+      throw new MintHttpError(
+        lastAllowlistError.message,
+        lastAllowlistError.status,
+        lastAllowlistError.code,
+      );
+    }
+    throw new MintHttpError("No active mint phase", 400, "UPAD_NO_PHASE");
+  }
 
   const owned = await countOwned(collection.id, principal);
-  if (owned >= phase.maxPerWallet) {
+  if (owned >= phaseCap) {
     throw new MintHttpError("Wallet mint cap reached for this phase", 403, "UPAD_MINT_CAP");
   }
 
@@ -523,8 +573,8 @@ export async function submitMint(params: {
     throw new MintHttpError("Payment memo mismatch", 400, "UPAD_PAYMENT_MISMATCH");
   }
 
-  const requested = getCatalogCollection(collectionIdOrSlug);
-  const collectionBase = getCatalogCollection(intent.collectionId);
+  const requested = await getResolvedCollection(collectionIdOrSlug);
+  const collectionBase = await getResolvedCollection(intent.collectionId);
   if (!collectionBase) throw new MintHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
   if (
     requested &&
@@ -547,9 +597,24 @@ export async function submitMint(params: {
     throw new MintHttpError("paymentRef already used", 409, "UPAD_PAYMENT_USED");
   }
 
-  const phase = collection.activePhase ?? collection.phases[0];
+  const phase =
+    collection.phases.find((p) => p.id === intent.phaseId) ??
+    collection.activePhase ??
+    collection.phases[0];
+  let phaseCap = phase?.maxPerWallet ?? 1;
+  if (phase) {
+    try {
+      const al = await assertAllowlisted(collection.id, walletPrincipal, phase);
+      if (al) phaseCap = Math.min(phaseCap, al.maxMints);
+    } catch (err) {
+      if (err instanceof ListingHttpError) {
+        throw new MintHttpError(err.message, err.status, err.code);
+      }
+      throw err;
+    }
+  }
   const owned = await countOwned(collection.id, walletPrincipal);
-  if (phase && owned >= phase.maxPerWallet) {
+  if (phase && owned >= phaseCap) {
     throw new MintHttpError("Wallet mint cap reached for this phase", 403, "UPAD_MINT_CAP");
   }
 

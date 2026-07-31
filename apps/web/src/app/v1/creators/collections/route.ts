@@ -1,45 +1,48 @@
 import { NextResponse } from "next/server";
 import { AuthError, requireAuth } from "@/lib/auth/requireAuth";
+import {
+  ListingHttpError,
+  createListing,
+  listCreatorListings,
+} from "@/lib/listingStore";
+import type { CreateCollectionInput } from "@unipad/shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Seller create/list — minting on Vercel uses the live catalog.
- * Full creator publishing still needs the hosted API + Postgres.
- * Return a clear product message (not a bare HTML 404 → UPAD_UNAVAILABLE).
- */
-function unavailable() {
+function handleErr(err: unknown) {
+  if (err instanceof AuthError) {
+    return NextResponse.json({ error: err.message, code: err.code }, { status: 401 });
+  }
+  if (err instanceof ListingHttpError) {
+    return NextResponse.json(
+      { error: err.message, code: err.code },
+      { status: err.status },
+    );
+  }
   return NextResponse.json(
-    {
-      error:
-        "Creating new drops on the live site needs the Unipad API host. You can still mint any live catalog drop with UCT.",
-      code: "UPAD_UNAVAILABLE",
-    },
-    { status: 503 },
+    { error: (err as Error).message || "Failed", code: "UPAD_UNKNOWN" },
+    { status: 500 },
   );
 }
 
 export async function GET(request: Request) {
   try {
-    await requireAuth(request.headers.get("Authorization"));
-    return NextResponse.json({ collections: [] });
+    const session = await requireAuth(request.headers.get("Authorization"));
+    const collections = await listCreatorListings(session.principal);
+    return NextResponse.json({ collections });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 401 });
-    }
-    return unavailable();
+    return handleErr(err);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    await requireAuth(request.headers.get("Authorization"));
-    return unavailable();
+    const session = await requireAuth(request.headers.get("Authorization"));
+    const body = (await request.json()) as CreateCollectionInput;
+    const created = await createListing(session.principal, body);
+    return NextResponse.json(created, { status: 201 });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: 401 });
-    }
-    return unavailable();
+    return handleErr(err);
   }
 }

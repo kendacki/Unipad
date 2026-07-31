@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCatalogCollection } from "@/lib/catalog";
+import { getResolvedCollection } from "@/lib/listingStore";
 import { withLiveSupply } from "@/lib/mintStore";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const col = getCatalogCollection(id);
+  const col = await getResolvedCollection(id);
   if (!col) {
     return NextResponse.json({ error: "Not found", code: "UPAD_NOT_FOUND" }, { status: 404 });
   }

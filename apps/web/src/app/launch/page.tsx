@@ -136,7 +136,25 @@ export default function LaunchPage() {
   async function createDraft() {
     const t = sessionToken(token);
     if (!t) {
-      toast.error(new Error("Connect"));
+      toast.error(new Error("Connect your wallet to list a drop."));
+      return;
+    }
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2) {
+      toast.error(new Error("Give your drop a name (at least 2 characters)."));
+      return;
+    }
+    const finalSlug = (slug || slugify(trimmedName)).trim().toLowerCase();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(finalSlug)) {
+      toast.error(new Error("Slug must be lowercase letters, numbers, and hyphens."));
+      return;
+    }
+    if (!Number.isInteger(totalSupply) || totalSupply < 1 || totalSupply > 100_000) {
+      toast.error(new Error("Supply must be between 1 and 100,000."));
+      return;
+    }
+    if (!Number.isInteger(royaltyBps) || royaltyBps < 0 || royaltyBps > 2000) {
+      toast.error(new Error("Royalty must be between 0% and 20%."));
       return;
     }
     if (!activePhases.length) {
@@ -145,6 +163,11 @@ export default function LaunchPage() {
     }
     if (activePhases.some((p) => Number(p.priceDisplay) < 1)) {
       toast.error(new Error("Minimum mint price is 1 UCT."));
+      return;
+    }
+    const allowlistOn = activePhases.some((p) => p.type === "allowlist");
+    if (allowlistOn && !allowlistText.trim()) {
+      toast.error(new Error("Add at least one wallet or @nametag to the guest list."));
       return;
     }
 
@@ -180,11 +203,10 @@ export default function LaunchPage() {
 
     setSubmitting(true);
     try {
-      const finalSlug = slug || slugify(name);
       const created = await api.createCollection(t, {
-        name,
+        name: trimmedName,
         slug: finalSlug,
-        description,
+        description: description.trim(),
         totalSupply,
         royaltyBps,
         coverUrl: coverUrl || undefined,
@@ -422,7 +444,7 @@ export default function LaunchPage() {
               </span>
             </label>
             <label>
-              Your royalty \(basis points\)
+              Your royalty (basis points)
               <input
                 type="number"
                 min={0}
