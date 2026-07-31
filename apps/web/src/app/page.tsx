@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { DropGrid } from "@/components/DropGrid";
 import { FaqSection } from "@/components/FaqSection";
+import { HomeHero, SectionReveal } from "@/components/HomeHero";
 
 export const metadata: Metadata = {
   title: "Unipad — Launch & mint NFTs on Unicity",
@@ -18,48 +18,21 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <>
-      <section className="hero">
-        <div className="hero-media" aria-hidden>
-          <Image
-            src="/hero-bg.webp"
-            alt=""
-            fill
-            priority
-            quality={100}
-            sizes="100vw"
-            unoptimized
-            style={{ objectFit: "cover", objectPosition: "left center" }}
-          />
-        </div>
-        <div className="shell hero-layout">
-          <div className="hero-content">
-            <div className="hero-brand">
-              Uni<em>pad</em>
-            </div>
-            <p>Launch an NFT drop or mint one with UCT. Fair minting — no gas wars.</p>
-            <div className="hero-actions">
-              <Link href="/drops" className="btn btn-primary">
-                Mint an NFT
-              </Link>
-              <Link href="/launch" className="btn btn-ghost on-orange">
-                Create a drop
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+      <HomeHero />
 
       <section className="section alt">
         <div className="shell">
-          <div className="section-head">
-            <div>
-              <h2>Live drops</h2>
-              <p>Open now — mint with UCT.</p>
+          <SectionReveal>
+            <div className="section-head">
+              <div>
+                <h2>Live drops</h2>
+                <p>Open now — mint with UCT.</p>
+              </div>
+              <Link href="/drops" className="btn btn-ghost">
+                See all
+              </Link>
             </div>
-            <Link href="/drops" className="btn btn-ghost">
-              See all
-            </Link>
-          </div>
+          </SectionReveal>
           <DropGrid limit={3} defaultFilter="mintable" />
         </div>
       </section>

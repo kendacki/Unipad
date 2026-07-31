@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
+import { AnimatePresence, m } from "framer-motion";
+import { accordionPanel, fadeUp, springSnappy, staggerContainer, cardItem } from "@/lib/motion";
 
 const FAQS = [
   {
@@ -37,21 +39,39 @@ export function FaqSection() {
     <section className="section faq-section" aria-labelledby={`${baseId}-title`}>
       <div className="faq-atmosphere" aria-hidden />
       <div className="shell faq-layout">
-        <header className="faq-intro faq-glass">
+        <m.header
+          className="faq-intro faq-glass"
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.35 }}
+        >
           <p className="faq-kicker">FAQ</p>
           <h2 id={`${baseId}-title`}>Questions, answered</h2>
           <p>
             Everything you need to mint or launch on Unipad — short, clear, and ready when you are.
           </p>
-        </header>
+        </m.header>
 
-        <div className="faq-list faq-glass">
+        <m.div
+          className="faq-list faq-glass"
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.15 }}
+        >
           {FAQS.map((item, i) => {
             const expanded = open === i;
             const panelId = `${baseId}-panel-${i}`;
             const btnId = `${baseId}-btn-${i}`;
             return (
-              <div key={item.q} className={`faq-item${expanded ? " is-open" : ""}`}>
+              <m.div
+                key={item.q}
+                className={`faq-item${expanded ? " is-open" : ""}`}
+                variants={cardItem}
+                layout
+                transition={springSnappy}
+              >
                 <button
                   type="button"
                   id={btnId}
@@ -62,23 +82,37 @@ export function FaqSection() {
                 >
                   <span className="faq-index">{String(i + 1).padStart(2, "0")}</span>
                   <span className="faq-question">{item.q}</span>
-                  <span className="faq-icon" aria-hidden>
+                  <m.span
+                    className="faq-icon"
+                    aria-hidden
+                    animate={{ rotate: expanded ? 180 : 0 }}
+                    transition={springSnappy}
+                  >
                     {expanded ? "−" : "+"}
-                  </span>
+                  </m.span>
                 </button>
-                <div
-                  id={panelId}
-                  role="region"
-                  aria-labelledby={btnId}
-                  className="faq-panel"
-                  hidden={!expanded}
-                >
-                  <p>{item.a}</p>
-                </div>
-              </div>
+                <AnimatePresence initial={false}>
+                  {expanded ? (
+                    <m.div
+                      id={panelId}
+                      role="region"
+                      aria-labelledby={btnId}
+                      className="faq-panel"
+                      key="panel"
+                      variants={accordionPanel}
+                      initial="collapsed"
+                      animate="open"
+                      exit="collapsed"
+                      style={{ overflow: "hidden" }}
+                    >
+                      <p>{item.a}</p>
+                    </m.div>
+                  ) : null}
+                </AnimatePresence>
+              </m.div>
             );
           })}
-        </div>
+        </m.div>
       </div>
     </section>
   );

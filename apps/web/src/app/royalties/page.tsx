@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { m } from "framer-motion";
 import type { RoyaltyEntry, RoyaltySummary } from "@unipad/shared";
 import { formatUct } from "@unipad/shared";
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
+import { cardItem, fadeUp, springSnappy, staggerFast } from "@/lib/motion";
 
 export default function RoyaltiesPage() {
   const toast = useToast();
@@ -28,14 +30,17 @@ export default function RoyaltiesPage() {
     return (
       <section className="section">
         <div className="shell" style={{ maxWidth: 560 }}>
-          <div className="panel glass">
+          <m.div className="panel glass" variants={fadeUp} initial="hidden" animate="show">
             <h2>Earnings</h2>
             <p className="hint">See UCT you’ve earned from mints on your drops.</p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button
+              <m.button
                 type="button"
                 className="btn btn-primary"
                 disabled={connecting}
+                whileHover={connecting ? undefined : { y: -1 }}
+                whileTap={connecting ? undefined : { scale: 0.98 }}
+                transition={springSnappy}
                 onClick={async () => {
                   try {
                     await connectSphere();
@@ -46,18 +51,23 @@ export default function RoyaltiesPage() {
                 }}
               >
                 Connect Sphere
-              </button>
+              </m.button>
             </div>
-          </div>
+          </m.div>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="section">
+    <m.section
+      className="section"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
       <div className="shell">
-        <div className="section-head">
+        <m.div className="section-head" variants={fadeUp} initial="hidden" animate="show">
           <div>
             <h2>Earnings</h2>
             <p>
@@ -65,23 +75,37 @@ export default function RoyaltiesPage() {
               {summary ? `${summary.platformFeeBps / 100}%` : "—"}).
             </p>
           </div>
-        </div>
+        </m.div>
 
         {summary ? (
-          <div className="panel glass" style={{ marginBottom: "1.5rem" }}>
+          <m.div
+            className="panel glass"
+            style={{ marginBottom: "1.5rem" }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={springSnappy}
+          >
             <div>
               <strong>{formatUct(summary.accruedUct)} UCT</strong> waiting
             </div>
             <div className="muted">{formatUct(summary.paidUct)} UCT already paid</div>
-          </div>
+          </m.div>
         ) : null}
 
         {!entries.length ? (
-          <div className="flash glass">No earnings yet. Publish a drop and get mints.</div>
+          <m.div className="flash glass" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            No earnings yet. Publish a drop and get mints.
+          </m.div>
         ) : (
-          <div className="grid-drops">
+          <m.div className="grid-drops" variants={staggerFast} initial="hidden" animate="show">
             {entries.map((e) => (
-              <div key={e.id} className="drop-tile panel glass">
+              <m.div
+                key={e.id}
+                className="drop-tile panel glass"
+                variants={cardItem}
+                whileHover={{ y: -4 }}
+                transition={springSnappy}
+              >
                 <div className="drop-meta">
                   <div>
                     <h3>{e.collectionName}</h3>
@@ -97,11 +121,11 @@ export default function RoyaltiesPage() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </m.div>
             ))}
-          </div>
+          </m.div>
         )}
       </div>
-    </section>
+    </m.section>
   );
 }

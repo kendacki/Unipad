@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { AnimatePresence, m } from "framer-motion";
 import type { Collection, MintIntentResponse, MintResult } from "@unipad/shared";
 import { api, API_URL } from "@/lib/api";
 import { dropPriceLabel, isMintable, statusLabel } from "@/lib/drops";
@@ -11,6 +12,7 @@ import { formatLaunchAt } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { DROP_DETAIL_FALLBACKS } from "@/lib/media";
+import { fadeUp, scaleIn, springSnappy } from "@/lib/motion";
 
 type Stage = "ready" | "intent" | "paying" | "queued" | "minting" | "done" | "error";
 
@@ -258,8 +260,18 @@ export default function DropDetailPage() {
               : null;
 
   return (
-    <section className="shell collection-hero">
-      <div className="visual">
+    <m.section
+      className="shell collection-hero"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.45 }}
+    >
+      <m.div
+        className="visual"
+        initial={{ opacity: 0, scale: 1.04 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+      >
         <Image
           src={collection.coverUrl || DROP_DETAIL_FALLBACKS[0]}
           alt=""
@@ -267,9 +279,14 @@ export default function DropDetailPage() {
           sizes="(max-width: 860px) 100vw, 55vw"
           priority
         />
-      </div>
+      </m.div>
 
-      <div className="mint-stage mint-card">
+      <m.div
+        className="mint-stage mint-card"
+        variants={scaleIn}
+        initial="hidden"
+        animate="show"
+      >
         <Link href="/drops" className="text-link back-link">
           ← All drops
         </Link>
@@ -298,32 +315,46 @@ export default function DropDetailPage() {
             className={`supply-bar mint-supply${busy ? " is-live" : ""}`}
             aria-hidden
           >
-            <span
+            <m.span
               className="supply-fill"
-              style={{
+              animate={{
                 width: `${
                   busy
                     ? Math.min(99, Math.max(supplyPct, supplyPct + Math.round(stageProgress * 0.12)))
                     : supplyPct
                 }%`,
               }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
             />
             {busy ? <span className="supply-pulse" /> : null}
           </div>
         </div>
 
-        {busy || stage === "done" ? (
-          <div className="mint-track" aria-live="polite">
-            <div className="mint-track-label">
-              <span>{stageLabel ?? "Working…"}</span>
-              <span className="muted">{stageProgress}%</span>
-            </div>
-            <div className={`mint-track-bar${busy ? " is-live" : ""}`}>
-              <span style={{ width: `${stageProgress}%` }} />
-              {busy ? <span className="mint-track-shim" /> : null}
-            </div>
-          </div>
-        ) : null}
+        <AnimatePresence>
+          {busy || stage === "done" ? (
+            <m.div
+              className="mint-track"
+              aria-live="polite"
+              key="track"
+              variants={fadeUp}
+              initial="hidden"
+              animate="show"
+              exit={{ opacity: 0, height: 0 }}
+            >
+              <div className="mint-track-label">
+                <span>{stageLabel ?? "Working…"}</span>
+                <span className="muted">{stageProgress}%</span>
+              </div>
+              <div className={`mint-track-bar${busy ? " is-live" : ""}`}>
+                <m.span
+                  animate={{ width: `${stageProgress}%` }}
+                  transition={{ duration: 0.35 }}
+                />
+                {busy ? <span className="mint-track-shim" /> : null}
+              </div>
+            </m.div>
+          ) : null}
+        </AnimatePresence>
 
         {queuePosition && queuePosition > 0 ? (
           <div className="flash">
@@ -332,18 +363,21 @@ export default function DropDetailPage() {
         ) : null}
 
         {result?.status === "confirmed" ? (
-          <div className="flash ok">
+          <m.div className="flash ok" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             Minted #{result.tokenId}.{" "}
             <Link href="/wallet" className="text-link">
               View in My mints
             </Link>
-          </div>
+          </m.div>
         ) : null}
 
-        <button
+        <m.button
           type="button"
           className="btn btn-signal"
           disabled={busy || !mintable}
+          whileHover={busy || !mintable ? undefined : { y: -2 }}
+          whileTap={busy || !mintable ? undefined : { scale: 0.98 }}
+          transition={springSnappy}
           onClick={runMint}
         >
           {!token
@@ -361,14 +395,14 @@ export default function DropDetailPage() {
                       ? "Not open yet"
                       : "Sold out"
                     : `Mint · ${priceLabel}`}
-        </button>
+        </m.button>
 
         {collection.status === "scheduled" && collection.launchAt ? (
           <p className="hint">Minting opens {formatLaunchAt(collection.launchAt)}.</p>
         ) : (
           <p className="hint">Pay with UCT first — then we confirm your NFT.</p>
         )}
-      </div>
-    </section>
+      </m.div>
+    </m.section>
   );
 }

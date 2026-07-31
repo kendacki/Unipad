@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, m } from "framer-motion";
 import { parseUct, type PhaseType } from "@unipad/shared";
 import { api } from "@/lib/api";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
+import { fadeUp, springSnappy } from "@/lib/motion";
 
 type Step = 0 | 1 | 2 | 3 | 4;
 
@@ -227,24 +229,43 @@ export default function LaunchPage() {
   }
 
   return (
-    <section className="section">
+    <m.section
+      className="section"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+    >
       <div className="shell" style={{ maxWidth: 720 }}>
-        <div className="section-head">
+        <m.div className="section-head" variants={fadeUp} initial="hidden" animate="show">
           <div>
             <h2>Create a drop</h2>
             <p>Name it, set a UCT price, then publish. Buyers pay first — then they get their NFT.</p>
           </div>
-        </div>
+        </m.div>
 
         <div className="wizard-steps">
           {steps.map((label, i) => (
-            <span key={label} className={step === i ? "active" : step > i ? "done" : ""}>
+            <m.span
+              key={label}
+              className={step === i ? "active" : step > i ? "done" : ""}
+              layout
+              transition={springSnappy}
+              animate={{ scale: step === i ? 1.04 : 1, opacity: step === i ? 1 : 0.72 }}
+            >
               {i + 1}. {label}
-            </span>
+            </m.span>
           ))}
         </div>
 
-        <p className="step-help">
+        <AnimatePresence mode="wait">
+          <m.p
+            key={`help-${step}`}
+            className="step-help"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.25 }}
+          >
           {step === 0 && "Start with the basics — name and cover."}
           {step === 1 && "Set price, supply, and when minting should open."}
           {step === 2 && "Optional: paste wallets that can mint early."}
@@ -253,17 +274,26 @@ export default function LaunchPage() {
             (previewLaunchAt
               ? "Confirm to list it as Upcoming until mint opens."
               : "Publish when you want minting to open.")}
-        </p>
+          </m.p>
+        </AnimatePresence>
         {!token ? (
-          <div className="panel glass" style={{ marginBottom: "1rem" }}>
+          <m.div
+            className="panel glass"
+            style={{ marginBottom: "1rem" }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
             <p className="hint" style={{ marginTop: 0 }}>
               Connect your wallet to create a drop.
             </p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button
+              <m.button
                 type="button"
                 className="btn btn-primary"
                 disabled={connecting}
+                whileHover={connecting ? undefined : { y: -1 }}
+                whileTap={connecting ? undefined : { scale: 0.98 }}
+                transition={springSnappy}
                 onClick={async () => {
                   try {
                     await connectSphere();
@@ -274,13 +304,21 @@ export default function LaunchPage() {
                 }}
               >
                 Connect Sphere
-              </button>
+              </m.button>
             </div>
-          </div>
+          </m.div>
         ) : null}
 
-        {step === 0 ? (
-          <div className="panel glass form-grid">
+        <AnimatePresence mode="wait">
+          {step === 0 ? (
+          <m.div
+            key="step-0"
+            className="panel glass form-grid"
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          >
             <label>
               Drop name
               <input
@@ -326,11 +364,18 @@ export default function LaunchPage() {
             >
               Next: price
             </button>
-          </div>
+          </m.div>
         ) : null}
 
         {step === 1 ? (
-          <div className="panel glass form-grid">
+          <m.div
+            key="step-1"
+            className="panel glass form-grid"
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          >
             <label>
               How many NFTs
               <input
@@ -516,11 +561,18 @@ export default function LaunchPage() {
                 {activePhases.some((p) => p.type === "allowlist") ? "Allowlist" : "Review"}
               </button>
             </div>
-          </div>
+          </m.div>
         ) : null}
 
         {step === 2 ? (
-          <div className="panel glass form-grid">
+          <m.div
+            key="step-2"
+            className="panel glass form-grid"
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          >
             <p className="muted" style={{ margin: 0 }}>
               Paste wallet principals (one per line) for the allowlist phase. You can also add them
               after create via the API.
@@ -542,11 +594,18 @@ export default function LaunchPage() {
                 Review
               </button>
             </div>
-          </div>
+          </m.div>
         ) : null}
 
         {step === 3 ? (
-          <div className="panel glass form-grid">
+          <m.div
+            key="step-3"
+            className="panel glass form-grid"
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          >
             <h3 className="display" style={{ fontSize: "1.5rem" }}>
               {name}
             </h3>
@@ -588,11 +647,18 @@ export default function LaunchPage() {
                 {submitting ? "Creating…" : "Save drop"}
               </button>
             </div>
-          </div>
+          </m.div>
         ) : null}
 
         {step === 4 ? (
-          <div className="panel glass form-grid">
+          <m.div
+            key="step-4"
+            className="panel glass form-grid"
+            initial={{ opacity: 0, x: 16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          >
             <h3 className="display" style={{ fontSize: "1.5rem" }}>
               {previewLaunchAt ? "Ready to schedule?" : "Ready to publish?"}
             </h3>
@@ -627,9 +693,10 @@ export default function LaunchPage() {
                 </button>
               ) : null}
             </div>
-          </div>
+          </m.div>
         ) : null}
+        </AnimatePresence>
       </div>
-    </section>
+    </m.section>
   );
 }

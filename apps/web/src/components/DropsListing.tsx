@@ -3,16 +3,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, m } from "framer-motion";
 import type { Collection } from "@unipad/shared";
 import { api } from "@/lib/api";
 import { DROP_COVER_FALLBACKS } from "@/lib/media";
 import { dropPriceLabel, isMintable, sortForStorefront, statusLabel } from "@/lib/drops";
 import { DropGrid } from "@/components/DropGrid";
+import { fadeUp, springSnappy } from "@/lib/motion";
 
 const FEATURED_COUNT = 3;
 const SLIDE_MS = 3000;
 
-/** Wide landscape crop for the featured banner */
 function landscapeCover(url: string) {
   if (!url.includes("images.unsplash.com")) return url;
   const base = url.split("?")[0];
@@ -74,9 +75,14 @@ export function DropsListing() {
   }, [featured.length, paused, active]);
 
   return (
-    <div className="drops-listing">
+    <m.div
+      className="drops-listing"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
       {featured.length ? (
-        <div
+        <m.div
           className="featured-carousel"
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
@@ -84,11 +90,15 @@ export function DropsListing() {
           onBlurCapture={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(false);
           }}
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         >
           <div className="featured-carousel-viewport">
-            <div
+            <m.div
               className="featured-carousel-track"
-              style={{ transform: `translate3d(-${active * 100}%, 0, 0)` }}
+              animate={{ x: `-${active * 100}%` }}
+              transition={{ type: "spring", stiffness: 260, damping: 32 }}
             >
               {featured.map((drop, i) => {
                 const mintable = isMintable(drop);
@@ -151,13 +161,13 @@ export function DropsListing() {
                   </Link>
                 );
               })}
-            </div>
+            </m.div>
           </div>
 
           {featured.length > 1 ? (
             <div className="featured-carousel-controls" role="tablist" aria-label="Trending drops">
               {featured.map((drop, i) => (
-                <button
+                <m.button
                   key={drop.id}
                   type="button"
                   role="tab"
@@ -165,6 +175,9 @@ export function DropsListing() {
                   aria-label={`Show ${drop.name}`}
                   className={`featured-carousel-dot${i === active ? " is-active" : ""}`}
                   onClick={() => goTo(i)}
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={springSnappy}
                 >
                   {i === active && !paused ? (
                     <span
@@ -173,30 +186,40 @@ export function DropsListing() {
                       style={{ animationDuration: `${SLIDE_MS}ms` }}
                     />
                   ) : null}
-                </button>
+                </m.button>
               ))}
             </div>
           ) : null}
-        </div>
+        </m.div>
       ) : null}
 
-      <div className="section-head drops-listing-head">
+      <m.div
+        className="section-head drops-listing-head"
+        variants={fadeUp}
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, amount: 0.4 }}
+      >
         <div>
           <h2>All drops</h2>
           <p>Mint live NFTs with UCT — pay once, we finish the mint.</p>
         </div>
-        <Link href="/launch" className="btn btn-signal">
-          Create a drop
-        </Link>
-      </div>
+        <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={springSnappy}>
+          <Link href="/launch" className="btn btn-signal">
+            Create a drop
+          </Link>
+        </m.div>
+      </m.div>
 
-      <DropGrid
-        filterable
-        defaultFilter="mintable"
-        excludeIds={featuredIds}
-        collections={collections}
-        error={error}
-      />
-    </div>
+      <AnimatePresence mode="wait">
+        <DropGrid
+          filterable
+          defaultFilter="mintable"
+          excludeIds={featuredIds}
+          collections={collections}
+          error={error}
+        />
+      </AnimatePresence>
+    </m.div>
   );
 }

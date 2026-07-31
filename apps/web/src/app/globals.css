@@ -504,7 +504,10 @@ h3,
 
 .faq-panel {
   padding: 0 1.25rem 1.35rem 3.85rem;
-  animation: faqReveal 0.35s var(--ease) both;
+}
+
+.faq-panel[hidden] {
+  display: none;
 }
 
 .faq-panel p {
@@ -636,7 +639,6 @@ h3,
 .featured-carousel-track {
   display: flex;
   width: 100%;
-  transition: transform 0.55s var(--ease);
   will-change: transform;
 }
 

@@ -8,7 +8,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { AnimatePresence, m } from "framer-motion";
 import { toUserError, type ErrorInfo } from "@/lib/errors";
+import { modalBackdrop, modalPanel, springSnappy, toastItem } from "@/lib/motion";
 
 export type ToastKind = "error" | "success" | "info";
 
@@ -99,49 +101,83 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={api}>
       {children}
       <div className="toast-stack" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast glass toast-${t.kind}`} role="status">
-            <div className="toast-body">
-              <strong>{t.title}</strong>
-              {t.message ? <p>{t.message}</p> : null}
-              {t.code ? <code className="error-code">{t.code}</code> : null}
-            </div>
-            <button
-              type="button"
-              className="toast-close"
-              aria-label="Dismiss"
-              onClick={() => dismiss(t.id)}
+        <AnimatePresence initial={false}>
+          {toasts.map((t) => (
+            <m.div
+              key={t.id}
+              className={`toast glass toast-${t.kind}`}
+              role="status"
+              variants={toastItem}
+              initial="hidden"
+              animate="show"
+              exit="exit"
+              layout
             >
-              ×
-            </button>
-          </div>
-        ))}
+              <div className="toast-body">
+                <strong>{t.title}</strong>
+                {t.message ? <p>{t.message}</p> : null}
+                {t.code ? <code className="error-code">{t.code}</code> : null}
+              </div>
+              <button
+                type="button"
+                className="toast-close"
+                aria-label="Dismiss"
+                onClick={() => dismiss(t.id)}
+              >
+                ×
+              </button>
+            </m.div>
+          ))}
+        </AnimatePresence>
       </div>
 
-      {confirm ? (
-        <div className="modal-backdrop" role="presentation">
-          <div className="modal glass" role="dialog" aria-modal="true">
-            <h3>{confirm.title}</h3>
-            <p className="muted">{confirm.message}</p>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => confirm.resolve(false)}
-              >
-                {confirm.cancelLabel ?? "Cancel"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-signal"
-                onClick={() => confirm.resolve(true)}
-              >
-                {confirm.confirmLabel ?? "Continue"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AnimatePresence>
+        {confirm ? (
+          <m.div
+            className="modal-backdrop"
+            role="presentation"
+            variants={modalBackdrop}
+            initial="hidden"
+            animate="show"
+            exit="exit"
+          >
+            <m.div
+              className="modal glass"
+              role="dialog"
+              aria-modal="true"
+              variants={modalPanel}
+              initial="hidden"
+              animate="show"
+              exit="exit"
+            >
+              <h3>{confirm.title}</h3>
+              <p className="muted">{confirm.message}</p>
+              <div className="modal-actions">
+                <m.button
+                  type="button"
+                  className="btn btn-ghost"
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={springSnappy}
+                  onClick={() => confirm.resolve(false)}
+                >
+                  {confirm.cancelLabel ?? "Cancel"}
+                </m.button>
+                <m.button
+                  type="button"
+                  className="btn btn-signal"
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={springSnappy}
+                  onClick={() => confirm.resolve(true)}
+                >
+                  {confirm.confirmLabel ?? "Continue"}
+                </m.button>
+              </div>
+            </m.div>
+          </m.div>
+        ) : null}
+      </AnimatePresence>
     </Ctx.Provider>
   );
 }
