@@ -527,9 +527,7 @@ export default function DropDetailPage() {
 
         {collection.status === "scheduled" && collection.launchAt ? (
           <p className="hint">Minting opens {formatLaunchAt(collection.launchAt)}.</p>
-        ) : (
-          <p className="hint">Pay with UCT first — then we confirm your NFT.</p>
-        )}
+        ) : null}
       </m.div>
     </m.section>
   );
