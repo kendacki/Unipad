@@ -1,0 +1,26 @@
+{
+  "name": "@unipad/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@unipad/shared": "workspace:*",
+    "@unicitylabs/sphere-sdk": "0.13.1",
+    "next": "^15.2.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.4",
+    "typescript": "~5.7.0",
+    "eslint": "^9.22.0",
+    "eslint-config-next": "^15.2.4"
+  }
+}

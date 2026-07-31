@@ -1,0 +1,20 @@
+{
+  "name": "unipad",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Unipad — NFT launchpad on Unicity, paid in UCT",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @unipad/api --filter @unipad/web dev",
+    "dev:api": "pnpm --filter @unipad/api dev",
+    "dev:web": "pnpm --filter @unipad/web dev",
+    "build": "pnpm -r build",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @unipad/api db:migrate",
+    "db:seed": "pnpm --filter @unipad/api db:seed"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
