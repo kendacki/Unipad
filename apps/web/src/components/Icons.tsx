@@ -84,6 +84,21 @@ export function IconSpark({ className }: { className?: string }) {
   );
 }
 
+/** Signed-in user portrait — shown beside Sign out */
+export function IconPortrait({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 40 40" fill="none" aria-hidden>
+      <circle cx="20" cy="20" r="19" fill="#0A0A0A" stroke="#FF6A00" strokeWidth="2" />
+      <circle cx="20" cy="15" r="6.5" fill="#FF6A00" />
+      <path
+        d="M8.5 33.5c2.2-6.2 6.4-9.2 11.5-9.2S29.3 27.3 31.5 33.5"
+        fill="#FF6A00"
+      />
+      <circle cx="20" cy="15" r="3.2" fill="#FFF" opacity="0.35" />
+    </svg>
+  );
+}
+
 /** Floating 3D-style isometric pad SVG for hero accent */
 export function HeroPadSvg({ className }: { className?: string }) {
   return (

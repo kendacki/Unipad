@@ -17,13 +17,28 @@ export default function RoyaltiesPage() {
 
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
     api
       .royalties(token)
       .then((r) => {
+        if (cancelled) return;
         setSummary(r.summary);
         setEntries(r.entries);
       })
-      .catch((e) => toast.error(e));
+      .catch((e) => {
+        if (cancelled) return;
+        // Session expired — ask to reconnect. Other errors: soft empty state.
+        const code = e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
+        if (code === "UPAD_UNAUTHORIZED" || code === "UPAD_AUTH_FAILED") {
+          toast.error(e);
+        } else {
+          setSummary({ accruedUct: "0", paidUct: "0", platformFeeBps: 250 });
+          setEntries([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [token, toast]);
 
   if (!token) {

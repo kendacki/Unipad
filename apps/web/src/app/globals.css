@@ -163,6 +163,45 @@ h3,
   justify-self: end;
 }
 
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 11rem;
+  padding: 0.2rem 0.55rem 0.2rem 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.user-portrait {
+  width: 1.85rem;
+  height: 1.85rem;
+  flex-shrink: 0;
+  display: block;
+}
+
+.user-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 720px) {
+  .user-chip-name {
+    display: none;
+  }
+
+  .user-chip {
+    padding: 0.15rem;
+    max-width: none;
+    border-radius: 50%;
+  }
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

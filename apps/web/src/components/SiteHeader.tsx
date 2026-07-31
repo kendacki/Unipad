@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { m } from "framer-motion";
-import { LogoMark } from "@/components/Icons";
+import { IconPortrait, LogoMark } from "@/components/Icons";
 import { useToast } from "@/lib/toast";
 import { shortPrincipal, useWallet } from "@/lib/wallet";
 import { slideDown, springSnappy } from "@/lib/motion";
@@ -45,9 +45,18 @@ export function SiteHeader() {
         <div className="header-actions">
           {token && principal ? (
             <>
-              <span className="muted" style={{ fontSize: "0.85rem" }}>
-                {displayName ?? shortPrincipal(principal)}
-              </span>
+              <m.div
+                className="user-chip"
+                title={displayName ?? principal}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={springSnappy}
+              >
+                <IconPortrait className="user-portrait" />
+                <span className="user-chip-name">
+                  {displayName ?? shortPrincipal(principal)}
+                </span>
+              </m.div>
               <m.button
                 type="button"
                 className="btn btn-ghost"

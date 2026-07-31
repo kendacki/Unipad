@@ -87,6 +87,11 @@ const CATALOG: Record<string, ErrorInfo> = {
     title: "Wallet sign-in failed",
     message: "Sphere connected, but Unipad couldn’t finish sign-in. Try Connect again.",
   },
+  UPAD_UNAVAILABLE: {
+    code: "UPAD_UNAVAILABLE",
+    title: "Not available yet",
+    message: "This part of Unipad isn’t online on the live site yet. Try again later.",
+  },
   UPAD_IDEMPOTENCY: {
     code: "UPAD_IDEMPOTENCY",
     title: "Missing request id",
@@ -168,7 +173,8 @@ export function resolveError(
     if (rawMessage && /collection|mint|drop/i.test(rawMessage)) {
       return CATALOG.UPAD_NOT_FOUND;
     }
-    return CATALOG.UPAD_AUTH_FAILED;
+    // Missing API route (HTML 404) — not an auth failure
+    return CATALOG.UPAD_UNAVAILABLE;
   }
   if (status === 403) {
     const fromMsg = matchMessage(rawMessage);
