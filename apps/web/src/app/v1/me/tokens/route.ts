@@ -1,18 +1,33 @@
 import { NextResponse } from "next/server";
 import { AuthError, requireAuth } from "@/lib/auth/requireAuth";
-import { MintHttpError, listWalletTokens } from "@/lib/mintStore";
+import {
+  MintHttpError,
+  bindNametag,
+  claimNametagTokens,
+  listWalletTokens,
+} from "@/lib/mintStore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
  * Authenticated mint inventory for the connected wallet.
- * Prefer this over /v1/wallets/:principal so the JWT principal is the source of truth.
+ * Binds Sphere nametag → pubkey and claims any tokens sent to that @nametag.
  */
 export async function GET(request: Request) {
   try {
     const session = await requireAuth(request.headers.get("Authorization"));
     const nametag = new URL(request.url).searchParams.get("nametag");
+
+    if (nametag) {
+      try {
+        await bindNametag(nametag, session.principal);
+        await claimNametagTokens(session.principal, nametag);
+      } catch (err) {
+        console.error("nametag bind/claim failed", err);
+      }
+    }
+
     const tokens = await listWalletTokens(session.principal, {
       nametag,
       forceScan: true,

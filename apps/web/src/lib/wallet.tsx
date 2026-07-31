@@ -217,6 +217,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         displayName:
           session.identity.nametag ?? auth.displayName ?? auth.chainPubkey.slice(0, 12),
       });
+      // Bind @nametag → pubkey and claim any mints sent to that nametag.
+      if (session.identity.nametag) {
+        void api.myTokens(auth.token, session.identity.nametag).catch(() => undefined);
+      }
       return auth.token;
     },
     [persist],
@@ -249,6 +253,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       if (session.identity.nametag) {
         setDisplayName(session.identity.nametag);
+        void api.myTokens(existingToken!, session.identity.nametag).catch(() => undefined);
       }
       return existingToken!;
     } catch (err) {

@@ -158,8 +158,13 @@ function paymentPath(paymentRef: string) {
 }
 
 function walletTokenPath(principal: string, collectionId: string, tokenId: number) {
-  const safe = encodeURIComponent(principal.toLowerCase()).slice(0, 120);
+  const safe = encodeURIComponent(principal.trim().toLowerCase()).slice(0, 120);
   return `mints/wallets/${safe}/${collectionId}-${tokenId}.json`;
+}
+
+function nametagPath(nametag: string) {
+  const tag = normalizeSphereRecipient(nametag);
+  return `mints/nametags/${encodeURIComponent(tag).slice(0, 120)}.json`;
 }
 
 function normalizePrincipal(principal: string) {
@@ -317,11 +322,99 @@ async function loadToken(collectionId: string, tokenId: number): Promise<StoredT
 async function removeWalletIndex(owner: string, collectionId: string, tokenId: number) {
   if (!useBlob()) return;
   const pathname = walletTokenPath(owner, collectionId, tokenId);
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
   try {
-    await del(pathname, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    await del(pathname, { token });
   } catch {
-    /* index may already be gone */
+    try {
+      const { blobs } = await list({ prefix: pathname, limit: 10, token });
+      for (const blob of blobs) {
+        if (blob.pathname === pathname || blob.pathname.startsWith(pathname)) {
+          await del(blob.url, { token });
+        }
+      }
+    } catch {
+      /* best-effort */
+    }
   }
+}
+
+/** Register Sphere nametag → chain pubkey so transfers can land on hex inventory. */
+export async function bindNametag(nametag: string, chainPubkey: string) {
+  const tag = normalizeSphereRecipient(nametag);
+  const pubkey = normalizePrincipal(chainPubkey);
+  if (!tag.startsWith("@") || !CHAIN_PUBKEY_RE.test(pubkey)) return;
+  if (!useBlob()) return;
+  await putJson(
+    nametagPath(tag),
+    { nametag: tag, chainPubkey: pubkey, updatedAt: new Date().toISOString() },
+    { overwrite: true },
+  );
+}
+
+async function resolveNametagToPubkey(nametag: string): Promise<string | null> {
+  if (!useBlob()) return null;
+  const tag = normalizeSphereRecipient(nametag);
+  if (!tag.startsWith("@")) return null;
+  const row = await getJson<{ chainPubkey?: string }>(nametagPath(tag));
+  const pubkey = row?.chainPubkey?.trim().toLowerCase();
+  return pubkey && CHAIN_PUBKEY_RE.test(pubkey) ? pubkey : null;
+}
+
+/**
+ * Resolve transfer recipient to a chain pubkey when we already know the nametag binding.
+ * Otherwise keep @nametag (claimed later when the recipient opens My mints).
+ */
+async function resolveTransferOwner(to: string): Promise<string> {
+  if (CHAIN_PUBKEY_RE.test(to)) return to.toLowerCase();
+  const resolved = await resolveNametagToPubkey(to);
+  return resolved ?? to;
+}
+
+/** Move tokens still owned by @nametag onto this wallet’s hex principal. */
+export async function claimNametagTokens(
+  chainPubkey: string,
+  nametag: string | null | undefined,
+): Promise<number> {
+  if (!nametag?.trim() || !useBlob()) return 0;
+  const pubkey = normalizePrincipal(chainPubkey);
+  if (!CHAIN_PUBKEY_RE.test(pubkey)) return 0;
+
+  const tag = normalizeSphereRecipient(nametag);
+  await bindNametag(tag, pubkey);
+
+  let claimed = 0;
+  let all: StoredToken[] = [];
+  try {
+    all = await listJsonUnder<StoredToken>("mints/tokens/");
+  } catch {
+    return 0;
+  }
+
+  for (const token of all) {
+    let storedTag: string;
+    try {
+      storedTag = normalizeSphereRecipient(token.ownerPrincipal);
+    } catch {
+      continue;
+    }
+    if (storedTag !== tag) continue;
+    if (normalizePrincipal(token.ownerPrincipal) === pubkey) continue;
+
+    const previousOwner = token.ownerPrincipal;
+    const updated: StoredToken = { ...token, ownerPrincipal: pubkey };
+    await putJson(tokenPath(updated.collectionId, updated.tokenId), updated, {
+      overwrite: true,
+    });
+    await putJson(
+      walletTokenPath(pubkey, updated.collectionId, updated.tokenId),
+      updated,
+      { overwrite: true },
+    );
+    await removeWalletIndex(previousOwner, updated.collectionId, updated.tokenId);
+    claimed += 1;
+  }
+  return claimed;
 }
 
 export async function createMintIntent(
@@ -530,6 +623,14 @@ export async function listWalletTokens(
   const owner = normalizePrincipal(principal);
   const nametag = opts?.nametag?.trim() || null;
 
+  if (nametag && useBlob() && CHAIN_PUBKEY_RE.test(owner)) {
+    try {
+      await claimNametagTokens(owner, nametag);
+    } catch {
+      /* claim is best-effort before list */
+    }
+  }
+
   if (!useBlob()) {
     return dedupeTokens(
       [...memory().tokens.values()].filter((t) =>
@@ -554,36 +655,51 @@ export async function listWalletTokens(
     try {
       indexed = indexed.concat(await listJsonUnder<StoredToken>(prefix));
     } catch {
-      /* continue other prefixes */
+      /* continue */
     }
   }
-  indexed = indexed.filter((t) => ownersMatch(t.ownerPrincipal, owner, nametag));
 
-  // Always scan token files for this owner when asked (My mints) or when index empty.
-  // Fixes missing wallet-index blobs after successful mint.
-  if (opts?.forceScan || indexed.length === 0) {
-    let all: StoredToken[] = [];
-    try {
-      all = await listJsonUnder<StoredToken>("mints/tokens/");
-    } catch {
-      all = [];
-    }
-    const owned = all.filter((t) => ownersMatch(t.ownerPrincipal, owner, nametag));
-    for (const t of owned) {
-      try {
-        await putJson(
-          walletTokenPath(t.ownerPrincipal, t.collectionId, t.tokenId),
-          t,
-          { overwrite: true },
-        );
-      } catch {
-        /* best-effort repair */
+  // Always include a full token-file scan so stale wallet indexes can't hide transfers.
+  let all: StoredToken[] = [];
+  try {
+    all = await listJsonUnder<StoredToken>("mints/tokens/");
+  } catch {
+    all = [];
+  }
+
+  const byKey = new Map<string, StoredToken>();
+  for (const t of [...indexed, ...all]) {
+    byKey.set(`${t.collectionId}:${t.tokenId}`, t);
+  }
+
+  const owned: StoredToken[] = [];
+  for (const t of byKey.values()) {
+    // Canonical file is source of truth (wallet index may be stale after transfer).
+    const canonical = (await loadToken(t.collectionId, t.tokenId)) ?? t;
+    if (!ownersMatch(canonical.ownerPrincipal, owner, nametag)) {
+      // Drop stale sender index copies that still sit under this wallet prefix.
+      if (
+        indexed.some(
+          (i) => i.collectionId === t.collectionId && i.tokenId === t.tokenId,
+        )
+      ) {
+        await removeWalletIndex(owner, t.collectionId, t.tokenId);
       }
+      continue;
     }
-    return dedupeTokens([...indexed, ...owned]);
+    owned.push(canonical);
+    try {
+      await putJson(
+        walletTokenPath(canonical.ownerPrincipal, canonical.collectionId, canonical.tokenId),
+        canonical,
+        { overwrite: true },
+      );
+    } catch {
+      /* best-effort index repair */
+    }
   }
 
-  return dedupeTokens(indexed);
+  return dedupeTokens(owned);
 }
 
 /**
@@ -600,7 +716,8 @@ export async function transferToken(params: {
   assertPersistentLedger();
 
   const from = normalizePrincipal(params.fromPrincipal);
-  const to = normalizeTransferRecipient(params.toRecipient);
+  const toRaw = normalizeTransferRecipient(params.toRecipient);
+  const to = await resolveTransferOwner(toRaw);
   const tokenId = Number(params.tokenId);
 
   if (!Number.isInteger(tokenId) || tokenId < 1) {
@@ -616,7 +733,7 @@ export async function transferToken(params: {
   if (
     params.fromNametag &&
     !CHAIN_PUBKEY_RE.test(to) &&
-    normalizeSphereRecipient(params.fromNametag) === to
+    normalizeSphereRecipient(params.fromNametag) === normalizeSphereRecipient(to)
   ) {
     throw new MintHttpError("Cannot transfer to yourself", 400, "UPAD_VALIDATION");
   }
@@ -648,8 +765,19 @@ export async function transferToken(params: {
     updated,
     { overwrite: true },
   );
-  if (normalizePrincipal(previousOwner) !== normalizePrincipal(to)) {
-    await removeWalletIndex(previousOwner, updated.collectionId, updated.tokenId);
+
+  // Always clear sender indexes (hex session + previous owner key / nametag key).
+  const removeOwners = new Set<string>([previousOwner, from]);
+  if (params.fromNametag) {
+    try {
+      removeOwners.add(normalizeSphereRecipient(params.fromNametag));
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const o of removeOwners) {
+    if (normalizePrincipal(o) === normalizePrincipal(to)) continue;
+    await removeWalletIndex(o, updated.collectionId, updated.tokenId);
   }
 
   return updated;

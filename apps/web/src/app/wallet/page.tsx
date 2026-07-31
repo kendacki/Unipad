@@ -4,7 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { m } from "framer-motion";
 import { api } from "@/lib/api";
-import { cachedMintsFor, rememberMint, removeCachedMint } from "@/lib/mintCache";
+import {
+  cachedMintsFor,
+  removeCachedMint,
+  replaceCachedMintsFor,
+} from "@/lib/mintCache";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { DROP_COVER_FALLBACKS } from "@/lib/media";
@@ -36,6 +40,14 @@ function principalFromJwt(jwt: string | null): string | null {
   }
 }
 
+function nametagQuery(displayName: string | null): string | null {
+  if (!displayName) return null;
+  const t = displayName.trim();
+  if (!t || t.startsWith("0x") || t.includes("…") || t.includes("...")) return null;
+  if (/^[0-9a-f]{64,66}$/i.test(t)) return null;
+  return t.startsWith("@") ? t : `@${t}`;
+}
+
 function mergeRows(...lists: TokenRow[][]): TokenRow[] {
   const map = new Map<string, TokenRow>();
   for (const list of lists) {
@@ -60,7 +72,7 @@ function formatMintedAt(iso: string) {
 
 export default function WalletPage() {
   const toast = useToast();
-  const { principal, token, connectSphere, connecting } = useWallet();
+  const { principal, displayName, token, connectSphere, connecting } = useWallet();
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -73,49 +85,60 @@ export default function WalletPage() {
     return raw || null;
   }, [token, principal]);
 
+  const sessionNametag = useMemo(() => nametagQuery(displayName), [displayName]);
+
   const refresh = useCallback(async () => {
     if (!sessionPrincipal) return;
     setLoading(true);
     setLoadError(null);
 
-    const local = cachedMintsFor(sessionPrincipal);
     const remoteLists: TokenRow[][] = [];
+    let remoteOk = false;
     let lastError: string | null = null;
 
-    try {
-      const r = await api.walletTokens(sessionPrincipal);
-      remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
-    } catch (e) {
-      lastError = e instanceof Error ? e.message : "Could not load mints";
-    }
-
+    // Authenticated path claims @nametag transfers onto this hex wallet.
     if (token) {
       try {
-        const r = await api.myTokens(token);
+        const r = await api.myTokens(token, sessionNametag);
         remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
-      } catch {
-        /* public list is enough */
+        remoteOk = true;
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : "Could not load mints";
       }
     }
 
-    const merged = mergeRows(...remoteLists, local);
-    for (const t of merged) {
-      rememberMint({
-        collectionId: t.collectionId,
-        collectionName: t.collectionName,
-        slug: t.slug,
-        coverUrl: t.coverUrl,
-        tokenId: t.tokenId,
-        mintTxRef: t.mintTxRef,
-        mintedAt: t.mintedAt,
-        ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
-      });
+    try {
+      const r = await api.walletTokens(sessionPrincipal, sessionNametag);
+      remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
+      remoteOk = true;
+    } catch (e) {
+      if (!remoteOk) {
+        lastError = e instanceof Error ? e.message : "Could not load mints";
+      }
     }
 
-    setTokens(merged);
-    if (!merged.length && lastError) setLoadError(lastError);
+    if (remoteOk) {
+      const remote = mergeRows(...remoteLists);
+      replaceCachedMintsFor(
+        sessionPrincipal,
+        remote.map((t) => ({
+          collectionId: t.collectionId,
+          collectionName: t.collectionName,
+          slug: t.slug,
+          coverUrl: t.coverUrl,
+          tokenId: t.tokenId,
+          mintTxRef: t.mintTxRef,
+          mintedAt: t.mintedAt,
+          ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
+        })),
+      );
+      setTokens(remote);
+    } else {
+      setTokens(cachedMintsFor(sessionPrincipal));
+      if (lastError) setLoadError(lastError);
+    }
     setLoading(false);
-  }, [token, sessionPrincipal]);
+  }, [token, sessionPrincipal, sessionNametag]);
 
   useEffect(() => {
     void refresh();
@@ -155,6 +178,7 @@ export default function WalletPage() {
             collectionId: row.collectionId,
             tokenId: row.tokenId,
             to,
+            nametag: sessionNametag,
           });
           return true;
         } finally {
@@ -164,7 +188,14 @@ export default function WalletPage() {
     });
 
     if (!confirmed) return;
+
+    // Drop from UI + cache immediately so a stale list can’t bring it back.
     removeCachedMint(sessionPrincipal, row.collectionId, row.tokenId);
+    setTokens((prev) =>
+      prev.filter(
+        (t) => !(t.collectionId === row.collectionId && t.tokenId === row.tokenId),
+      ),
+    );
     toast.success("Mint sent", `Transferred to ${to}.`);
     setRecipientDraft((prev) => {
       const next = { ...prev };

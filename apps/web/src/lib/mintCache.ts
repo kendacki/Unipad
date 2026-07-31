@@ -39,11 +39,7 @@ export function rememberMint(row: CachedMint) {
   const next = [
     { ...row, ownerPrincipal: owner },
     ...readAll().filter(
-      (t) =>
-        !(
-          t.collectionId === row.collectionId &&
-          t.tokenId === row.tokenId
-        ),
+      (t) => !(t.collectionId === row.collectionId && t.tokenId === row.tokenId),
     ),
   ];
   writeAll(next);
@@ -55,20 +51,26 @@ export function cachedMintsFor(principal: string | null | undefined): CachedMint
   return readAll().filter((t) => t.ownerPrincipal === owner);
 }
 
+/** Remove a mint from cache for every owner (after a successful send). */
 export function removeCachedMint(
-  principal: string,
+  _principal: string,
   collectionId: string,
   tokenId: number,
 ) {
-  const owner = principal.trim().toLowerCase();
   writeAll(
     readAll().filter(
-      (t) =>
-        !(
-          t.ownerPrincipal === owner &&
-          t.collectionId === collectionId &&
-          t.tokenId === tokenId
-        ),
+      (t) => !(t.collectionId === collectionId && t.tokenId === tokenId),
     ),
   );
+}
+
+/** Replace this wallet’s cache entries with the remote inventory (source of truth). */
+export function replaceCachedMintsFor(principal: string, rows: CachedMint[]) {
+  const owner = principal.trim().toLowerCase();
+  const others = readAll().filter((t) => t.ownerPrincipal !== owner);
+  const next = rows.map((r) => ({
+    ...r,
+    ownerPrincipal: (r.ownerPrincipal || owner).trim().toLowerCase(),
+  }));
+  writeAll([...next, ...others]);
 }
