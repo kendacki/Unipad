@@ -19,7 +19,8 @@ type Stage = "ready" | "intent" | "paying" | "queued" | "minting" | "done" | "er
 export default function DropDetailPage() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
-  const { token, principal, connectSphere, connecting, payUct } = useWallet();
+  const { token, principal, ensureSphereConnected, connecting, payUct, sphereReady } =
+    useWallet();
   const toast = useToast();
 
   const [collection, setCollection] = useState<Collection | null>(null);
@@ -150,13 +151,16 @@ export default function DropDetailPage() {
   );
 
   async function runMint() {
-    if (!token || !collection) {
-      try {
-        await connectSphere();
-        toast.success("Wallet connected", "Tap Mint again to continue.");
-      } catch (e) {
-        toast.error(e);
-      }
+    if (!collection) return;
+
+    // Sphere Connect does not survive page refresh — JWT might, but the live
+    // wallet client does not. Reconnect from this click before any long awaits
+    // so the Sphere popup still counts as a user gesture.
+    let sessionToken: string;
+    try {
+      sessionToken = await ensureSphereConnected();
+    } catch (e) {
+      toast.error(e);
       return;
     }
 
@@ -172,7 +176,7 @@ export default function DropDetailPage() {
     try {
       setStage("intent");
       toast.info("Reserving your spot…");
-      const nextIntent = await api.mintIntent(token, collection.id);
+      const nextIntent = await api.mintIntent(sessionToken, collection.id);
       setIntent(nextIntent);
 
       setStage("paying");
@@ -187,7 +191,7 @@ export default function DropDetailPage() {
       setStage("minting");
       toast.info("Finishing your mint…");
       const mintResult = await api.mint(
-        token,
+        sessionToken,
         collection.id,
         nextIntent.idempotencyKey,
         paymentRef,
@@ -383,7 +387,7 @@ export default function DropDetailPage() {
           transition={springSnappy}
           onClick={runMint}
         >
-          {!token
+          {!token || !sphereReady
             ? connecting
               ? "Connecting…"
               : "Connect Sphere to mint"

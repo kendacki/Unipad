@@ -133,6 +133,8 @@ const MESSAGE_TO_CODE: Array<[RegExp | string, string]> = [
   ["Forbidden", "UPAD_FORBIDDEN"],
   ["Connect your wallet", "UPAD_UNAUTHORIZED"],
   ["Could not connect to Sphere", "UPAD_AUTH_FAILED"],
+  ["Reconnect Sphere", "UPAD_UNAUTHORIZED"],
+  ["Reconnect Sphere wallet", "UPAD_UNAUTHORIZED"],
 ];
 
 export class ApiError extends Error {

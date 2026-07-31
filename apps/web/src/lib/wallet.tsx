@@ -20,6 +20,7 @@ import {
   describeConnectError,
   resolveUctCoinId,
   type SphereClient,
+  type SphereSession,
 } from "./sphereConnect";
 
 type SphereHandle = {
@@ -32,8 +33,16 @@ type WalletState = {
   principal: string | null;
   displayName: string | null;
   connecting: boolean;
+  /** True when the live Sphere Connect client is attached (needed for UCT send). */
+  sphereReady: boolean;
   /** Opens Sphere wallet (extension or popup). Must run from a click handler. */
   connectSphere: () => Promise<void>;
+  /**
+   * Ensure Sphere Connect is live for payments. Reuses JWT when the same wallet
+   * reconnects after a refresh. Must run from a click handler (before long awaits).
+   * @returns Active Unipad session JWT
+   */
+  ensureSphereConnected: () => Promise<string>;
   disconnect: () => void;
   payUct: (params: {
     recipient: string;
@@ -58,7 +67,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [principal, setPrincipal] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [sphereReady, setSphereReady] = useState(false);
   const sphereRef = useRef<SphereHandle | null>(null);
+  const tokenRef = useRef<string | null>(null);
+  const principalRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+  useEffect(() => {
+    principalRef.current = principal;
+  }, [principal]);
 
   useEffect(() => {
     try {
@@ -85,9 +104,18 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setDisplayName(session.displayName ?? null);
   }, []);
 
+  const attachSphere = useCallback((session: SphereSession) => {
+    sphereRef.current = {
+      client: session.client,
+      disconnect: session.disconnect,
+    };
+    setSphereReady(true);
+  }, []);
+
   const clearSphere = useCallback(async () => {
     const handle = sphereRef.current;
     sphereRef.current = null;
+    setSphereReady(false);
     if (handle) {
       try {
         await handle.disconnect();
@@ -110,17 +138,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setDisplayName(null);
   }, [clearSphere]);
 
-  const connectSphere = useCallback(async () => {
-    setConnecting(true);
-    try {
-      // Static autoConnect path — keeps user gesture for Sphere popup on Vercel
-      const session = await connectSphereWallet();
-
-      sphereRef.current = {
-        client: session.client,
-        disconnect: session.disconnect,
-      };
-
+  const completeAuth = useCallback(
+    async (session: SphereSession) => {
       const { nonce, challenge } = await api.challenge(session.identity.chainPubkey);
 
       const signed = await session.client.intent<{
@@ -139,9 +158,36 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         displayName:
           session.identity.nametag ?? auth.displayName ?? auth.chainPubkey.slice(0, 12),
       });
+      return auth.token;
+    },
+    [persist],
+  );
+
+  const ensureSphereConnected = useCallback(async () => {
+    if (sphereRef.current && tokenRef.current) {
+      return tokenRef.current;
+    }
+
+    setConnecting(true);
+    try {
+      const session = await connectSphereWallet();
+      attachSphere(session);
+
+      const pubkey = session.identity.chainPubkey.toLowerCase();
+      const existingPrincipal = principalRef.current?.toLowerCase() ?? null;
+      const existingToken = tokenRef.current;
+
+      // Fresh visit or different wallet → full Unipad sign-in.
+      if (!existingToken || !existingPrincipal || existingPrincipal !== pubkey) {
+        return await completeAuth(session);
+      }
+
+      if (session.identity.nametag) {
+        setDisplayName(session.identity.nametag);
+      }
+      return existingToken;
     } catch (err) {
       await clearSphere();
-      // Keep structured API errors (auth/network) so toasts show the right code.
       if (err instanceof ApiError) throw err;
       throw new ApiError(describeConnectError(err), {
         code: "UPAD_UNAUTHORIZED",
@@ -150,7 +196,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setConnecting(false);
     }
-  }, [clearSphere, persist]);
+  }, [attachSphere, clearSphere, completeAuth]);
+
+  const connectSphere = useCallback(async () => {
+    await ensureSphereConnected();
+  }, [ensureSphereConnected]);
 
   const payUct = useCallback(
     async (params: {
@@ -159,10 +209,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       memo: string;
       coinIdHex?: string;
     }) => {
-      const handle = sphereRef.current;
-      if (!handle) {
-        throw new Error("Reconnect Sphere wallet to pay in UCT");
+      // Prefer ensureSphereConnected() from the mint click before long awaits —
+      // popup reconnect here may be blocked after mint-intent.
+      if (!sphereRef.current) {
+        throw new ApiError("Reconnect Sphere wallet to pay in UCT", {
+          code: "UPAD_UNAUTHORIZED",
+          status: 401,
+        });
       }
+      const handle = sphereRef.current;
 
       const to = normalizeSphereRecipient(params.recipient);
 
@@ -189,11 +244,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       principal,
       displayName,
       connecting,
+      sphereReady,
       connectSphere,
+      ensureSphereConnected,
       disconnect,
       payUct,
     }),
-    [token, principal, displayName, connecting, connectSphere, disconnect, payUct],
+    [
+      token,
+      principal,
+      displayName,
+      connecting,
+      sphereReady,
+      connectSphere,
+      ensureSphereConnected,
+      disconnect,
+      payUct,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
