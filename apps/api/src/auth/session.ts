@@ -79,7 +79,7 @@ export async function verifyChallenge(nonce: string, signature: string) {
     `INSERT INTO creators (principal, display_name)
      VALUES ($1, $2)
      ON CONFLICT (principal) DO NOTHING`,
-    [recovered, `0x${recovered.slice(0, 8)}…${recovered.slice(-4)}`],
+    [recovered, recovered.startsWith("mock_") ? "Atlas Works" : `0x${recovered.slice(0, 8)}…${recovered.slice(-4)}`],
   );
 
   return {
@@ -97,7 +97,7 @@ export async function mockSession(label = "creator") {
     `INSERT INTO creators (principal, display_name)
      VALUES ($1, $2)
      ON CONFLICT (principal) DO UPDATE SET display_name = EXCLUDED.display_name`,
-    [principal, label === "buyer" ? "Demo Buyer" : "Demo Creator"],
+    [principal, label === "buyer" ? "Alex Rivera" : "Jordan Hale"],
   );
   const token = await new SignJWT({ sub: principal, mock: true })
     .setProtectedHeader({ alg: "HS256" })
@@ -108,7 +108,7 @@ export async function mockSession(label = "creator") {
     token,
     chainPubkey: principal,
     expiresIn: env.sessionTtlSeconds,
-    displayName: label === "buyer" ? "Demo Buyer" : "Demo Creator",
+    displayName: label === "buyer" ? "Alex Rivera" : "Jordan Hale",
   };
 }
 

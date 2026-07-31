@@ -90,8 +90,13 @@ export async function createCollection(principal: string, input: CreateCollectio
     await client.query(
       `INSERT INTO creators (principal, display_name)
        VALUES ($1, $2)
-       ON CONFLICT (principal) DO NOTHING`,
-      [principal, principal.startsWith("mock_") ? "Demo Creator" : `0x${principal.slice(0, 8)}`],
+       ON CONFLICT (principal) DO UPDATE
+         SET display_name = CASE
+           WHEN creators.display_name = '' OR lower(creators.display_name) IN ('demo creator', 'creator')
+           THEN EXCLUDED.display_name
+           ELSE creators.display_name
+         END`,
+      [principal, principal.startsWith("mock_") ? "Atlas Works" : `0x${principal.slice(0, 8)}`],
     );
 
     const { rows } = await client.query<CollectionRow>(
@@ -143,7 +148,7 @@ export async function createCollection(principal: string, input: CreateCollectio
       {
         ...collection,
         creator_display_name: principal.startsWith("mock_")
-          ? "Demo Creator"
+          ? "Atlas Works"
           : `0x${principal.slice(0, 8)}`,
       },
       phases,

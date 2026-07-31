@@ -1,5 +1,20 @@
 import type { Collection, CollectionPhase } from "@unipad/shared";
 
+const PLACEHOLDER_CREATORS = new Set(["demo creator", "creator", "demo buyer", ""]);
+
+function polishCreatorName(name: string): string {
+  const trimmed = name.trim();
+  if (PLACEHOLDER_CREATORS.has(trimmed.toLowerCase())) return "Atlas Works";
+  return trimmed;
+}
+
+function polishCollectionName(name: string): string {
+  const key = name.trim().toLowerCase();
+  if (key === "allowlist only" || key === "allowlist-only") return "Private Circuit";
+  if (key === "untitled" || key === "new drop" || key === "drop") return "Untitled Edition";
+  return name.trim();
+}
+
 type CollectionRow = {
   id: string;
   slug: string;
@@ -62,10 +77,12 @@ export function mapCollection(row: CollectionRow, phases: CollectionPhase[]): Co
   return {
     id: row.id,
     slug: row.slug,
-    name: row.name,
+    name: polishCollectionName(row.name),
     description: row.description,
     creatorPrincipal: row.creator_principal,
-    creatorDisplayName: row.creator_display_name || row.creator_principal.slice(0, 12),
+    creatorDisplayName: polishCreatorName(
+      row.creator_display_name || row.creator_principal.slice(0, 12),
+    ),
     coverUrl: row.cover_url,
     status,
     totalSupply: row.total_supply,
