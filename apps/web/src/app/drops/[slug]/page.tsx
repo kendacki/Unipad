@@ -113,6 +113,34 @@ export default function DropDetailPage() {
     return () => ws.close();
   }, [collection?.id, principal, refresh]);
 
+  const [trackPct, setTrackPct] = useState(0);
+
+  useEffect(() => {
+    const targets: Partial<Record<Stage, number>> = {
+      ready: 0,
+      intent: 22,
+      paying: 48,
+      queued: 68,
+      minting: 88,
+      done: 100,
+    };
+    if (stage === "error") return;
+    const target = targets[stage] ?? 0;
+    if (stage === "ready") {
+      setTrackPct(0);
+      return;
+    }
+    setTrackPct((prev) => (prev < target ? Math.max(prev, Math.floor(target * 0.35)) : prev));
+    const id = window.setInterval(() => {
+      setTrackPct((prev) => {
+        if (prev >= target) return target;
+        const step = Math.max(1, Math.ceil((target - prev) / 6));
+        return Math.min(target, prev + step);
+      });
+    }, 180);
+    return () => window.clearInterval(id);
+  }, [stage]);
+
   const priceLabel = useMemo(
     () => (collection ? dropPriceLabel(collection) : "—"),
     [collection],
@@ -204,7 +232,7 @@ export default function DropDetailPage() {
 
   const minted = liveSupply?.minted ?? collection.mintedCount;
   const remaining = liveSupply?.remaining ?? collection.remainingSupply;
-  const pct = Math.min(100, Math.round((minted / Math.max(1, collection.totalSupply)) * 100));
+  const supplyPct = Math.min(100, Math.round((minted / Math.max(1, collection.totalSupply)) * 100));
   const mintable = isMintable({ ...collection, remainingSupply: remaining, mintedCount: minted });
   const busy =
     connecting ||
@@ -212,6 +240,21 @@ export default function DropDetailPage() {
     stage === "minting" ||
     stage === "queued" ||
     stage === "intent";
+
+  const stageProgress = trackPct;
+
+  const stageLabel =
+    stage === "intent"
+      ? "Reserving your spot…"
+      : stage === "paying"
+        ? "Waiting for UCT payment…"
+        : stage === "queued"
+          ? `In line${queuePosition ? ` #${queuePosition}` : ""}…`
+          : stage === "minting"
+            ? "Confirming your mint…"
+            : stage === "done"
+              ? "Mint complete"
+              : null;
 
   return (
     <section className="shell collection-hero">
@@ -250,10 +293,36 @@ export default function DropDetailPage() {
               {remaining} left · {minted}/{collection.totalSupply} minted
             </div>
           </div>
-          <div className="supply-bar mint-supply" aria-hidden>
-            <span style={{ width: `${pct}%` }} />
+          <div
+            className={`supply-bar mint-supply${busy ? " is-live" : ""}`}
+            aria-hidden
+          >
+            <span
+              className="supply-fill"
+              style={{
+                width: `${
+                  busy
+                    ? Math.min(99, Math.max(supplyPct, supplyPct + Math.round(stageProgress * 0.12)))
+                    : supplyPct
+                }%`,
+              }}
+            />
+            {busy ? <span className="supply-pulse" /> : null}
           </div>
         </div>
+
+        {busy || stage === "done" ? (
+          <div className="mint-track" aria-live="polite">
+            <div className="mint-track-label">
+              <span>{stageLabel ?? "Working…"}</span>
+              <span className="muted">{stageProgress}%</span>
+            </div>
+            <div className={`mint-track-bar${busy ? " is-live" : ""}`}>
+              <span style={{ width: `${stageProgress}%` }} />
+              {busy ? <span className="mint-track-shim" /> : null}
+            </div>
+          </div>
+        ) : null}
 
         {queuePosition && queuePosition > 0 ? (
           <div className="flash">

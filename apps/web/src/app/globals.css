@@ -584,14 +584,90 @@ h3,
   height: 3px;
   background: var(--mist);
   overflow: hidden;
+  position: relative;
 }
 
-.supply-bar > span {
+.supply-bar > span,
+.supply-bar .supply-fill {
   display: block;
   height: 100%;
   background: var(--orange);
   transform-origin: left;
-  transition: width 400ms var(--ease);
+  transition: width 500ms var(--ease);
+}
+
+.supply-bar.is-live .supply-fill {
+  transition: width 700ms var(--ease);
+}
+
+.supply-pulse {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 106, 0, 0.45) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: barSweep 1.1s linear infinite;
+  pointer-events: none;
+}
+
+.mint-track {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.mint-track-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.mint-track-bar {
+  height: 6px;
+  background: var(--mist);
+  overflow: hidden;
+  position: relative;
+  border-radius: 2px;
+}
+
+.mint-track-bar > span:first-child {
+  display: block;
+  height: 100%;
+  background: var(--orange);
+  transition: width 450ms var(--ease);
+}
+
+.mint-track-bar.is-live > span:first-child {
+  box-shadow: 0 0 0 1px rgba(255, 106, 0, 0.15);
+}
+
+.mint-track-shim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: barSweep 1s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes barSweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
 }
 
 /* Prefer opaque surfaces over heavy blur — keeps interactions smooth */

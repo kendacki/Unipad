@@ -1,53 +1,83 @@
+<div style="font-family: 'Times New Roman', Times, serif;">
+
 # Unipad
 
-NFT launchpad built for **Unicity**, with **Unicity Token (UCT)** as the mint payment currency.
+Unipad is an NFT launchpad built for the **Unicity** network. Creators can publish drops. Buyers can mint NFTs and pay with **UCT** (Unicity Token).
 
-Aligned to the Architecture Audit MVP (Phase 0–1 + early creator tooling) and official Unicity Sphere repos:
+---
 
-| Upstream | What we follow |
-|----------|----------------|
-| [sphere-sdk](https://github.com/unicity-sphere/sphere-sdk) + [CONNECT.md](https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/CONNECT.md) | Sphere Connect `autoConnect`, `SPHERE_NETWORKS.testnet2`, `sign_message` + `send` intents |
-| [sphere-sdk-connect-example](https://github.com/unicity-sphere/sphere-sdk-connect-example) | dApp metadata, permission scopes, send result (`transferId` / `deliveryPending`) |
-| [unicity-ids](https://github.com/unicitynetwork/unicity-ids) | UCT **18 decimals**, coin id `455ad872…41d89` |
+## 1. What Unipad Does
 
-## Sphere Connect compliance
+Unipad has two main jobs:
 
-- **Network gate:** handshake sends `network: SPHERE_NETWORKS.testnet2` (`id: 4`) — required or wallet rejects with `INCOMPATIBLE_NETWORK`
-- **dApp metadata:** `{ name: "Unipad", url: location.origin }` on every connect (Vercel origin is sent automatically)
-- **Auth:** `intent('sign_message')` → backend verifies with `@unicitylabs/sphere-sdk` helpers
-- **Pay:** `intent('send', { to, amount, coinId, memo })` with amount in **base units** and **64-hex** `coinId` (never the symbol alone)
-- **Delivery-pending:** treated as paid (`sphere-pending:<memo>`) — never auto-retry send
-- **Connect button:** statically calls `autoConnect` so the Sphere **popup/extension** opens inside the click gesture (required on Vercel / Chrome)
-- **Production:** mock wallet is **disabled** when `NODE_ENV=production` — Connect always opens real Sphere
+1. **Create a drop** — set a name, cover, supply, and price in UCT, then publish.
+2. **Mint an NFT** — connect a Sphere wallet, pay UCT, and receive the NFT.
 
-## Deploy on Vercel
+There are no gas wars. Payment happens first in UCT. Unipad then finishes the mint.
 
-1. Import the repo → set **Root Directory** to `apps/web`
-2. Framework: Next.js (uses `apps/web/vercel.json`)
-3. Set environment variables (Production):
+---
 
-| Variable | Example |
-|----------|---------|
-| `NEXT_PUBLIC_API_URL` | `https://your-api.example.com` |
-| `NEXT_PUBLIC_WS_URL` | `wss://your-api.example.com` |
-| `NEXT_PUBLIC_SPHERE_WALLET_URL` | `https://sphere.unicity.network` |
-| `NEXT_PUBLIC_UCT_COIN_ID` | `455ad8720656b08e8dbd5bac1f3c73eeea5431565f6c1c3af742b1aa12d41d89` |
-| `NEXT_PUBLIC_NETWORK` | `testnet2` |
-| `NEXT_PUBLIC_UNIPAD_DEV_MOCK` | `false` |
+## 2. Who This Is For
 
-4. On the **API** host, set matching:
+| Role | What they do |
+|------|----------------|
+| Creators | Launch drops, set prices, view earnings |
+| Collectors | Browse live drops and mint with UCT |
+| Developers | Run the app locally or deploy the web app on Vercel |
 
-| Variable | Example |
-|----------|---------|
-| `FRONTEND_ORIGIN` | `https://your-app.vercel.app` |
-| `AUTH_DOMAIN` | `your-app.vercel.app` |
-| `UNIPAD_DEV_MOCK` | `false` |
-| `TREASURY_PRINCIPAL` | your Sphere nametag / principal that receives UCT |
-| `JWT_SECRET` | strong random secret |
+---
 
-5. After deploy: tap **Connect Sphere** → allow the popup → approve Unipad in [Sphere](https://sphere.unicity.network) (testnet2).
+## 3. Project Structure
 
-## Quick start
+This repository is a monorepo (one project with several packages):
+
+| Folder | Purpose |
+|--------|---------|
+| `apps/web` | Website (Next.js) — storefront, mint page, create flow |
+| `apps/api` | Backend API — auth, minting, queue, royalties |
+| `packages/shared` | Shared types and UCT amount helpers |
+
+---
+
+## 4. How Minting Works
+
+Unipad uses a **pay-then-mint** flow:
+
+1. The buyer opens a drop and starts a mint.
+2. Unipad creates a mint intent (price, treasury address, memo).
+3. The buyer pays UCT through the **Sphere** wallet.
+4. Unipad confirms the payment and mints the NFT.
+5. The NFT appears under **My mints**.
+
+---
+
+## 5. Wallet Connection (Sphere)
+
+Unipad connects to the official Sphere wallet:
+
+- Wallet site: [https://sphere.unicity.network](https://sphere.unicity.network)
+- Network: **testnet2**
+- Payment token: **UCT** (18 decimals)
+
+When you click **Connect Sphere**, Unipad opens the Sphere wallet (browser extension or popup). You approve the connection, then you can mint or create drops.
+
+Official references:
+
+- [Sphere SDK](https://github.com/unicity-sphere/sphere-sdk)
+- [Connect guide](https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/CONNECT.md)
+- [Connect example](https://github.com/unicity-sphere/sphere-sdk-connect-example)
+
+---
+
+## 6. Run Locally
+
+### Requirements
+
+- Node.js 22 or newer
+- [pnpm](https://pnpm.io/)
+- Docker (for Postgres and Redis)
+
+### Steps
 
 ```bash
 pnpm db:up
@@ -58,41 +88,85 @@ pnpm db:seed
 pnpm dev
 ```
 
-- Web: http://localhost:3000  
-- API: http://localhost:8787/health  
+### Local URLs
 
-After changing `UCT_DECIMALS` (now **18**), re-run `pnpm db:seed` so prices match Unicity base units.
+| Service | Address |
+|---------|---------|
+| Website | http://localhost:3000 |
+| API health | http://localhost:8787/health |
 
-## Audit API surface (implemented)
+Copy `.env.example` to `.env` and keep secrets out of git. Never commit a real `.env` file.
 
-| Endpoint | Status |
-|----------|--------|
-| `GET/POST` auth challenge/verify (+ mock) | Done |
-| `GET /v1/collections`, `GET /v1/collections/:id` | Done |
-| `POST .../mint-intent`, `POST .../mint`, `GET .../mint-status` | Done |
-| `POST /v1/creators/collections`, publish | Done |
-| `PATCH /v1/creators/collections/:id/phases` | Done |
-| Allowlist GET/POST | Done |
-| `GET /v1/creators/me/royalties` | Done |
-| `POST /v1/media/upload` + `/uploads/*` | Done |
-| WebSocket `supply.updated`, `mint.confirmed`, `mint.result`, `queue.position` | Done |
+---
 
-## Still deferred (later audit phases)
+## 7. Deploy the Website on Vercel
 
-- Live Uniqueness Oracle / Astrid `capsule-mint` (DB UNIQUE is the stand-in)
-- Real Sphere payment proof verification at the gateway (mock/dev trusts memo-bound refs; live trusts Connect `transferId`)
-- Kong/Envoy, multi-region K8s, Kafka, IPFS dual-pin, chaos/DR game-days
+1. Import this repository into Vercel.
+2. Set the **Root Directory** to `apps/web`.
+3. Add the environment variables below.
+4. Deploy.
+5. Open the site and click **Connect Sphere**. Allow the popup if the browser asks.
 
-## Pay-then-mint
+### Website environment variables
 
-1. Mint intent → UCT amount (base units) + treasury + memo + `coinIdHex`  
-2. Client pays via Sphere Connect `send` (or mock)  
-3. Mint with `Idempotency-Key` + `paymentRef` → queue → ledger + royalty accrual  
+| Variable | Meaning | Example |
+|----------|---------|---------|
+| `NEXT_PUBLIC_API_URL` | Your API base URL | `https://your-api.example.com` |
+| `NEXT_PUBLIC_WS_URL` | WebSocket URL for live updates | `wss://your-api.example.com` |
+| `NEXT_PUBLIC_SPHERE_WALLET_URL` | Sphere wallet URL | `https://sphere.unicity.network` |
+| `NEXT_PUBLIC_UCT_COIN_ID` | Official UCT coin id | See `.env.example` |
+| `NEXT_PUBLIC_NETWORK` | Unicity network name | `testnet2` |
+| `NEXT_PUBLIC_UNIPAD_DEV_MOCK` | Demo wallet (must be off in production) | `false` |
 
-## Monorepo
+### API environment variables
 
-| Path | Role |
-|------|------|
-| `apps/web` | Next.js storefront + launch + royalties |
-| `apps/api` | Hono API, queue, rate limit, media |
-| `packages/shared` | Types + UCT helpers (18 decimals) |
+| Variable | Meaning |
+|----------|---------|
+| `FRONTEND_ORIGIN` | Your Vercel site URL (for CORS) |
+| `AUTH_DOMAIN` | Your site hostname (no `https://`) |
+| `TREASURY_PRINCIPAL` | Sphere account that receives mint payments |
+| `JWT_SECRET` | Strong secret for login sessions |
+| `UNIPAD_DEV_MOCK` | Set to `false` in production |
+
+---
+
+## 8. Main Features
+
+| Feature | Status |
+|---------|--------|
+| Browse and filter drops | Done |
+| Create and publish a drop | Done |
+| Sphere wallet connect | Done |
+| Pay with UCT, then mint | Done |
+| Mint queue and live updates | Done |
+| My mints | Done |
+| Creator earnings (royalties) | Done |
+| Local image upload | Done |
+
+### Not included yet
+
+- Full on-chain uniqueness oracle
+- Full payment proof verification beyond Sphere Connect transfer ids
+- Large-scale infrastructure (Kubernetes, Kafka, dual IPFS pin)
+
+---
+
+## 9. Useful Commands
+
+| Command | What it does |
+|---------|----------------|
+| `pnpm dev` | Start website and API together |
+| `pnpm db:up` | Start Postgres and Redis |
+| `pnpm db:migrate` | Create database tables |
+| `pnpm db:seed` | Add sample drop data |
+| `pnpm --filter @unipad/web build` | Build the website for production |
+
+---
+
+## 10. License and Contact
+
+This project is the Unipad MVP codebase for Unicity.
+
+Repository: [https://github.com/kendacki/Unipad](https://github.com/kendacki/Unipad)
+
+</div>

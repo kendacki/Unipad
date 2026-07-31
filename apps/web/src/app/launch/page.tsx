@@ -51,8 +51,8 @@ export default function LaunchPage() {
   const [totalSupply, setTotalSupply] = useState(100);
   const [royaltyBps, setRoyaltyBps] = useState(500);
   const [phases, setPhases] = useState<PhaseDraft[]>([
-    { type: "allowlist", name: "Allowlist", priceDisplay: "20", maxPerWallet: 2, enabled: false },
-    { type: "public", name: "Public", priceDisplay: "25", maxPerWallet: 3, enabled: true },
+    { type: "allowlist", name: "Allowlist", priceDisplay: "2", maxPerWallet: 2, enabled: false },
+    { type: "public", name: "Public", priceDisplay: "1", maxPerWallet: 3, enabled: true },
   ]);
   const [allowlistText, setAllowlistText] = useState("");
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -91,6 +91,10 @@ export default function LaunchPage() {
     }
     if (!activePhases.length) {
       toast.error(new Error("Enable at least one mint phase."));
+      return;
+    }
+    if (activePhases.some((p) => Number(p.priceDisplay) < 1)) {
+      toast.error(new Error("Minimum mint price is 1 UCT."));
       return;
     }
 
@@ -321,6 +325,9 @@ export default function LaunchPage() {
                     <label>
                       Price (UCT)
                       <input
+                        type="number"
+                        min={1}
+                        step="any"
                         value={p.priceDisplay}
                         onChange={(e) => {
                           const next = [...phases];

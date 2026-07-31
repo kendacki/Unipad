@@ -16,6 +16,14 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "Unipad — Launch & mint NFTs on Unicity",
   description: "Create a drop, mint with UCT, and get your NFT. Simple, fair, on Unicity",
+  applicationName: "Unipad",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-icon", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

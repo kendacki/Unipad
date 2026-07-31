@@ -144,7 +144,7 @@ export function DropGrid({
                   <div className="drop-price">{dropPriceLabel(c)}</div>
                 </div>
                 <div className="supply-bar" aria-hidden>
-                  <span style={{ width: `${mintedPct}%` }} />
+                  <span className="supply-fill" style={{ width: `${mintedPct}%` }} />
                 </div>
                 <div className="drop-footer">
                   <span className="muted">
