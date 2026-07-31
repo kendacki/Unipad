@@ -165,7 +165,7 @@ async function upsertDrop(def: DropSeed, priceDisplay: string) {
     if (phase.rows[0]) {
       await query(
         `UPDATE collection_phases
-         SET type = 'public', name = 'Public', price_uct = $2, max_per_wallet = 3, starts_at = COALESCE(starts_at, now())
+         SET type = 'public', name = 'Public', price_uct = $2, max_per_wallet = 2, starts_at = COALESCE(starts_at, now())
          WHERE id = $1`,
         [phase.rows[0].id, price],
       );
@@ -173,7 +173,7 @@ async function upsertDrop(def: DropSeed, priceDisplay: string) {
       await query(
         `INSERT INTO collection_phases (
            collection_id, type, name, price_uct, max_per_wallet, starts_at, sort_order
-         ) VALUES ($1, 'public', 'Public', $2, 3, now(), 0)`,
+         ) VALUES ($1, 'public', 'Public', $2, 2, now(), 0)`,
         [id, price],
       );
     }
@@ -197,7 +197,7 @@ async function upsertDrop(def: DropSeed, priceDisplay: string) {
     await query(
       `INSERT INTO collection_phases (
          collection_id, type, name, price_uct, max_per_wallet, starts_at, sort_order
-       ) VALUES ($1, 'public', 'Public', $2, 3, now(), 0)`,
+       ) VALUES ($1, 'public', 'Public', $2, 2, now(), 0)`,
       [id, price],
     );
   }
@@ -261,6 +261,13 @@ async function refreshPublicCovers() {
 
 async function seed() {
   await cleanupPlaceholderDrops();
+
+  // Existing live drops: enforce 2 mints per wallet (platform default for current listings).
+  await query(
+    `UPDATE collection_phases
+     SET max_per_wallet = 2
+     WHERE type IN ('public', 'allowlist', 'creator')`,
+  );
 
   const results: Array<{ slug: string; name: string; creator: string; price: string }> = [];
 

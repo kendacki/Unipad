@@ -126,7 +126,7 @@ function toCollection(def: SeedDrop, index: number): Collection {
     type: "public",
     name: "Public",
     priceUct: parseUct(def.priceUct),
-    maxPerWallet: 3,
+    maxPerWallet: 2,
     startsAt: createdAt,
     endsAt: null,
     supplyCap: null,

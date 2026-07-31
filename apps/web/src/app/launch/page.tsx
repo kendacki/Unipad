@@ -31,6 +31,19 @@ type PhaseDraft = {
   enabled: boolean;
 };
 
+/** How many NFTs each wallet may mint from this drop */
+const MINT_LIMIT_OPTIONS = [
+  { value: 1, label: "One NFT", hint: "Each wallet can mint 1" },
+  { value: 2, label: "Two NFTs", hint: "Each wallet can mint up to 2" },
+  { value: 10, label: "Multiple NFTs", hint: "Each wallet can mint up to 10" },
+] as const;
+
+type MintLimit = (typeof MINT_LIMIT_OPTIONS)[number]["value"];
+
+function mintLimitLabel(limit: number) {
+  return MINT_LIMIT_OPTIONS.find((o) => o.value === limit)?.label ?? `${limit} per wallet`;
+}
+
 function slugify(name: string) {
   return name
     .toLowerCase()
@@ -62,9 +75,10 @@ export default function LaunchPage() {
   const [coverUrl, setCoverUrl] = useState("");
   const [totalSupply, setTotalSupply] = useState(100);
   const [royaltyBps, setRoyaltyBps] = useState(500);
+  const [mintLimit, setMintLimit] = useState<MintLimit>(2);
   const [phases, setPhases] = useState<PhaseDraft[]>([
     { type: "allowlist", name: "Allowlist", priceDisplay: "2", maxPerWallet: 2, enabled: false },
-    { type: "public", name: "Public", priceDisplay: "1", maxPerWallet: 3, enabled: true },
+    { type: "public", name: "Public", priceDisplay: "1", maxPerWallet: 2, enabled: true },
   ]);
   const [allowlistText, setAllowlistText] = useState("");
   const [launchMode, setLaunchMode] = useState<LaunchMode>("now");
@@ -82,6 +96,11 @@ export default function LaunchPage() {
   const tz = useMemo(() => timezoneHint(), []);
 
   const activePhases = useMemo(() => phases.filter((p) => p.enabled), [phases]);
+
+  function applyMintLimit(limit: MintLimit) {
+    setMintLimit(limit);
+    setPhases((prev) => prev.map((p) => ({ ...p, maxPerWallet: limit })));
+  }
 
   const previewLaunchAt = useMemo(() => {
     if (launchMode === "now") return null;
@@ -387,6 +406,22 @@ export default function LaunchPage() {
               />
             </label>
             <label>
+              Mints per wallet
+              <select
+                value={mintLimit}
+                onChange={(e) => applyMintLimit(Number(e.target.value) as MintLimit)}
+              >
+                {MINT_LIMIT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label} — {opt.hint}
+                  </option>
+                ))}
+              </select>
+              <span className="hint">
+                Caps how many NFTs one Sphere wallet can mint from this drop.
+              </span>
+            </label>
+            <label>
               Your royalty \(basis points\)
               <input
                 type="number"
@@ -521,20 +556,9 @@ export default function LaunchPage() {
                         }}
                       />
                     </label>
-                    <label>
-                      Max per person
-                      <input
-                        type="number"
-                        min={1}
-                        max={50}
-                        value={p.maxPerWallet}
-                        onChange={(e) => {
-                          const next = [...phases];
-                          next[idx] = { ...p, maxPerWallet: Number(e.target.value) };
-                          setPhases(next);
-                        }}
-                      />
-                    </label>
+                    <p className="muted" style={{ margin: 0, fontSize: "0.9rem" }}>
+                      Mint limit: {mintLimitLabel(mintLimit)}
+                    </p>
                   </>
                 ) : null}
               </div>
@@ -610,7 +634,8 @@ export default function LaunchPage() {
               {name}
             </h3>
             <p className="muted" style={{ margin: 0 }}>
-              /{slug} · {totalSupply} supply · {(royaltyBps / 100).toFixed(2)}% royalty
+              /{slug} · {totalSupply} supply · {(royaltyBps / 100).toFixed(2)}% royalty ·{" "}
+              {mintLimitLabel(mintLimit).toLowerCase()} per wallet
             </p>
             <ul className="muted" style={{ margin: 0, paddingLeft: "1.1rem" }}>
               {activePhases.map((p) => (

@@ -309,6 +309,9 @@ export default function DropDetailPage() {
             <div className="mint-price">{priceLabel}</div>
             <div className="muted">
               {remaining} left · {minted}/{collection.totalSupply} minted
+              {collection.activePhase?.maxPerWallet
+                ? ` · max ${collection.activePhase.maxPerWallet}/wallet`
+                : null}
             </div>
           </div>
           <div
