@@ -114,7 +114,7 @@ const MESSAGE_TO_CODE: Array<[RegExp | string, string]> = [
   ["Missing bearer", "UPAD_UNAUTHORIZED"],
   ["Invalid or expired", "UPAD_UNAUTHORIZED"],
   ["Forbidden", "UPAD_FORBIDDEN"],
-  ["Connect", "UPAD_UNAUTHORIZED"],
+  ["Connect your wallet", "UPAD_UNAUTHORIZED"],
 ];
 
 export class ApiError extends Error {

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { DropGrid } from "@/components/DropGrid";
+import { FaqSection } from "@/components/FaqSection";
 
 export const metadata: Metadata = {
   title: "Unipad — Launch & mint NFTs on Unicity",
@@ -62,6 +63,8 @@ export default function HomePage() {
           <DropGrid limit={3} defaultFilter="mintable" />
         </div>
       </section>
+
+      <FaqSection />
     </>
   );
 }

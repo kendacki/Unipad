@@ -23,18 +23,13 @@ export const SPHERE_WALLET_URL = (
   process.env.NEXT_PUBLIC_SPHERE_WALLET_URL ?? "https://sphere.unicity.network"
 ).replace(/\/$/, "");
 
-/** Production builds never use mock — even if the env flag is set by mistake. */
-export const ALLOW_DEV_MOCK =
-  process.env.NEXT_PUBLIC_UNIPAD_DEV_MOCK === "true" &&
-  process.env.NODE_ENV !== "production";
-
 /** Sphere CloudFront/WAF blocks popup URLs that include localhost / 127.0.0.1. */
 export function isLocalDevHost(hostname = typeof window !== "undefined" ? window.location.hostname : "") {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }
 
 export const LOCALHOST_SPHERE_BLOCKED =
-  "LOCALHOST_SPHERE_BLOCKED: Sphere’s hosted wallet blocks localhost (CloudFront 403). Install the Sphere extension, open Unipad on a public HTTPS URL, or use Demo wallet locally.";
+  "LOCALHOST_SPHERE_BLOCKED: Sphere’s hosted wallet blocks localhost (CloudFront 403). Install the Sphere browser extension, or open Unipad on a public HTTPS URL (Vercel/ngrok).";
 
 const CONNECT_PERMISSIONS = [
   PERMISSION_SCOPES.IDENTITY_READ,
@@ -165,7 +160,7 @@ export function describeConnectError(err: unknown): string {
   const lower = msg.toLowerCase();
 
   if (msg.includes("LOCALHOST_SPHERE_BLOCKED") || (lower.includes("cloudfront") && lower.includes("403"))) {
-    return "Sphere’s hosted wallet blocks localhost. Install the Sphere browser extension, use a public HTTPS URL (Vercel/ngrok), or connect with Demo wallet.";
+    return "Sphere’s hosted wallet blocks localhost. Install the Sphere browser extension, or use a public HTTPS URL (Vercel/ngrok).";
   }
   if (lower.includes("popup") && (lower.includes("blocker") || lower.includes("failed to open"))) {
     return "Allow popups for this site, then tap Connect again. Sphere opens in a wallet window.";

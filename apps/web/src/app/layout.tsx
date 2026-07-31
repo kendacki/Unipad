@@ -3,6 +3,7 @@ import { Poppins } from "next/font/google";
 import { WalletProvider } from "@/lib/wallet";
 import { ToastProvider } from "@/lib/toast";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
 import "./globals.css";
 
 const poppins = Poppins({
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <WalletProvider>
             <SiteHeader />
             <main>{children}</main>
+            <SiteFooter />
           </WalletProvider>
         </ToastProvider>
       </body>

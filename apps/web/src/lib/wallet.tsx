@@ -14,7 +14,6 @@ import { formatUct } from "@unipad/shared";
 import { api } from "./api";
 import { paymentRefFromSendResult, POPUP_SESSION_KEY } from "./sphere";
 import {
-  ALLOW_DEV_MOCK,
   INTENT_ACTIONS,
   connectSphereWallet,
   describeConnectError,
@@ -31,11 +30,9 @@ type WalletState = {
   token: string | null;
   principal: string | null;
   displayName: string | null;
-  mock: boolean;
   connecting: boolean;
-  connectMock: (role?: "creator" | "buyer") => Promise<void>;
   /** Opens Sphere wallet (extension or popup). Must run from a click handler. */
-  connectSphere: () => Promise<{ mock: boolean; reason?: string }>;
+  connectSphere: () => Promise<void>;
   disconnect: () => void;
   payUct: (params: {
     recipient: string;
@@ -59,7 +56,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [principal, setPrincipal] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
-  const [mock, setMock] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const sphereRef = useRef<SphereHandle | null>(null);
 
@@ -68,21 +64,24 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as Stored;
+      // Drop legacy demo/mock sessions — Sphere only
+      if (parsed.mock || parsed.principal?.startsWith("mock_")) {
+        localStorage.removeItem(STORAGE_KEY);
+        return;
+      }
       setToken(parsed.token);
       setPrincipal(parsed.principal);
       setDisplayName(parsed.displayName ?? null);
-      setMock(Boolean(parsed.mock));
     } catch {
       /* ignore */
     }
   }, []);
 
-  const persist = useCallback((session: Stored) => {
+  const persist = useCallback((session: Omit<Stored, "mock">) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     setToken(session.token);
     setPrincipal(session.principal);
     setDisplayName(session.displayName ?? null);
-    setMock(Boolean(session.mock));
   }, []);
 
   const clearSphere = useCallback(async () => {
@@ -108,30 +107,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setPrincipal(null);
     setDisplayName(null);
-    setMock(false);
   }, [clearSphere]);
-
-  const connectMock = useCallback(
-    async (role: "creator" | "buyer" = "creator") => {
-      if (!ALLOW_DEV_MOCK) {
-        throw new Error("Demo wallet is disabled in production. Connect with Sphere.");
-      }
-      setConnecting(true);
-      try {
-        await clearSphere();
-        const session = await api.mockAuth(role);
-        persist({
-          token: session.token,
-          principal: session.chainPubkey,
-          displayName: session.displayName,
-          mock: true,
-        });
-      } finally {
-        setConnecting(false);
-      }
-    },
-    [clearSphere, persist],
-  );
 
   const connectSphere = useCallback(async () => {
     setConnecting(true);
@@ -161,22 +137,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         principal: auth.chainPubkey,
         displayName:
           session.identity.nametag ?? auth.displayName ?? auth.chainPubkey.slice(0, 12),
-        mock: false,
       });
-      return { mock: false as const };
     } catch (err) {
       await clearSphere();
-      // Never silently mock on Vercel / production
-      if (ALLOW_DEV_MOCK) {
-        console.warn("Sphere connect failed, falling back to mock:", err);
-        await connectMock("buyer");
-        return { mock: true as const, reason: describeConnectError(err) };
-      }
       throw new Error(describeConnectError(err));
     } finally {
       setConnecting(false);
     }
-  }, [clearSphere, connectMock, persist]);
+  }, [clearSphere, persist]);
 
   const payUct = useCallback(
     async (params: {
@@ -185,14 +153,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       memo: string;
       coinIdHex?: string;
     }) => {
-      if (mock) {
-        if (!ALLOW_DEV_MOCK) {
-          throw new Error("Demo payments are disabled. Reconnect with Sphere.");
-        }
-        await new Promise((r) => setTimeout(r, 600));
-        return `mock-uct:${params.memo}:${params.amount}:${Date.now()}`;
-      }
-
       const handle = sphereRef.current;
       if (!handle) {
         throw new Error("Reconnect Sphere wallet to pay in UCT");
@@ -218,7 +178,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       return paymentRefFromSendResult(raw, params.memo);
     },
-    [mock],
+    [],
   );
 
   const value = useMemo(
@@ -226,24 +186,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       token,
       principal,
       displayName,
-      mock,
       connecting,
-      connectMock,
       connectSphere,
       disconnect,
       payUct,
     }),
-    [
-      token,
-      principal,
-      displayName,
-      mock,
-      connecting,
-      connectMock,
-      connectSphere,
-      disconnect,
-      payUct,
-    ],
+    [token, principal, displayName, connecting, connectSphere, disconnect, payUct],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
@@ -256,7 +204,6 @@ export function useWallet() {
 }
 
 export function shortPrincipal(p: string) {
-  if (p.startsWith("mock_")) return p.replace("mock_", "");
   if (p.length < 16) return p;
   return `${p.slice(0, 8)}…${p.slice(-4)}`;
 }

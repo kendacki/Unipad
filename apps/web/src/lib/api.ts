@@ -118,11 +118,6 @@ export const api = {
     }),
   mintStatus: (token: string, id: string, key: string) =>
     request<MintResult>(`/v1/collections/${id}/mint-status/${key}`, { token }),
-  mockAuth: (role: "creator" | "buyer") =>
-    request<AuthSession>("/v1/auth/mock", {
-      method: "POST",
-      body: JSON.stringify({ role }),
-    }),
   challenge: (chainPubkey: string) =>
     request<{ nonce: string; challenge: string; expiresAt: number }>(
       `/v1/auth/challenge?chainPubkey=${encodeURIComponent(chainPubkey)}`,

@@ -534,7 +534,7 @@ export default function LaunchPage() {
                 rows={8}
                 value={allowlistText}
                 onChange={(e) => setAllowlistText(e.target.value)}
-                placeholder={"mock_buyer_abc\n02ab…\n@collector"}
+                placeholder={"02ab…\n@collector"}
               />
             </label>
             <div style={{ display: "flex", gap: "0.5rem" }}>
