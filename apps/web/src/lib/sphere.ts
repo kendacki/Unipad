@@ -6,10 +6,13 @@
 
 export { normalizeSphereRecipient } from "@unipad/shared";
 
-/** Canonical UCT fungible coin id on Unicity testnet (64-hex, lowercase). */
+/**
+ * Canonical UCT fungible coin id on Unicity testnet2 (64-hex, lowercase).
+ * Source: unicity-ids.testnet2.json (`symbol: UCT`).
+ */
 export const UCT_COIN_ID =
-  process.env.NEXT_PUBLIC_UCT_COIN_ID ??
-  "455ad8720656b08e8dbd5bac1f3c73eeea5431565f6c1c3af742b1aa12d41d89";
+  process.env.NEXT_PUBLIC_UCT_COIN_ID?.trim().toLowerCase() ||
+  "f581d30f593e4b369d684a4563b5246f07b1d265f7178a2c0a82b81f39c24dc0";
 
 /** Official UCT decimals (unicity-ids / Sphere token registry). */
 export const UCT_DECIMALS_OFFICIAL = 18;

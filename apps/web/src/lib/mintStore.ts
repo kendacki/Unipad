@@ -78,7 +78,9 @@ function treasuryPrincipal(): string {
 }
 
 function uctCoinIdHex(): string {
-  return process.env.NEXT_PUBLIC_UCT_COIN_ID?.trim() || UCT_COIN_ID;
+  const configured = process.env.NEXT_PUBLIC_UCT_COIN_ID?.trim().toLowerCase();
+  if (configured && /^[0-9a-f]{64}$/.test(configured)) return configured;
+  return UCT_COIN_ID;
 }
 
 function intentPath(key: string) {

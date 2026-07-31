@@ -304,12 +304,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const to = normalizeSphereRecipient(params.recipient);
 
       try {
-        let coinId: string;
-        if (params.coinIdHex && /^[0-9a-f]{64}$/i.test(params.coinIdHex)) {
-          coinId = params.coinIdHex.toLowerCase();
-        } else {
-          coinId = await resolveUctCoinId(handle.client);
-        }
+        // Always resolve UCT from the live wallet (or current registry). Never trust a
+        // stale mint-intent coinIdHex — wrong ids show raw units + "don't hold this token".
+        const coinId = await resolveUctCoinId(handle.client);
 
         // `to` is the CONNECT.md field; some wallet builds also read `recipient`.
         const sendPromise = handle.client.intent(INTENT_ACTIONS.SEND, {

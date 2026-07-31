@@ -176,11 +176,8 @@ export async function connectSphereWallet(): Promise<SphereSession> {
 }
 
 export async function resolveUctCoinId(client: SphereClient): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_UCT_COIN_ID;
-  if (configured && /^[0-9a-f]{64}$/i.test(configured)) {
-    return configured.toLowerCase();
-  }
-
+  // Prefer the UCT id the connected wallet knows — avoids stale Vercel env coin ids
+  // that make Sphere show raw base units and "You don't hold this token".
   try {
     const assets = await client.query<Array<{ coinId?: string; symbol?: string }>>(
       RPC_METHODS.GET_ASSETS,
@@ -191,6 +188,23 @@ export async function resolveUctCoinId(client: SphereClient): Promise<string> {
     }
   } catch {
     /* wallet may omit assets */
+  }
+
+  try {
+    const tokens = await client.query<
+      Array<{ coinId?: string; symbol?: string; amount?: string }>
+    >(RPC_METHODS.GET_TOKENS);
+    const uct = tokens?.find((t) => (t.symbol || "").toUpperCase() === "UCT");
+    if (uct?.coinId && /^[0-9a-f]{64}$/i.test(uct.coinId)) {
+      return uct.coinId.toLowerCase();
+    }
+  } catch {
+    /* wallet may omit tokens */
+  }
+
+  const configured = process.env.NEXT_PUBLIC_UCT_COIN_ID?.trim();
+  if (configured && /^[0-9a-f]{64}$/i.test(configured)) {
+    return configured.toLowerCase();
   }
 
   return UCT_COIN_ID;

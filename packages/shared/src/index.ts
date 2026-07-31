@@ -139,9 +139,12 @@ export interface MediaUploadResult {
 
 export const UCT_DECIMALS = 18;
 
-/** Canonical UCT coin id (Unicity testnet registry / unicity-ids). */
+/**
+ * Canonical UCT coin id on Unicity testnet2
+ * (https://github.com/unicitynetwork/unicity-ids — unicity-ids.testnet2.json).
+ */
 export const UCT_COIN_ID =
-  "455ad8720656b08e8dbd5bac1f3c73eeea5431565f6c1c3af742b1aa12d41d89";
+  "f581d30f593e4b369d684a4563b5246f07b1d265f7178a2c0a82b81f39c24dc0";
 
 /**
  * Normalize a Unicity payment recipient for Sphere `send` / Connect intents.
