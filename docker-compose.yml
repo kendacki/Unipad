@@ -25,5 +25,59 @@ services:
       timeout: 3s
       retries: 10
 
+  # Application API (optional profile). Scale with:
+  #   docker compose --profile edge up -d --scale api=2
+  # nginx resolves `api` via Docker DNS and least_conn balances replicas.
+  api:
+    profiles: ["edge"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://unipad:unipad@postgres:5432/unipad
+      REDIS_URL: redis://redis:6379
+      PORT: "8787"
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-unipad}
+      AUTH_DOMAIN: ${AUTH_DOMAIN:-localhost}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      TREASURY_PRINCIPAL: ${TREASURY_PRINCIPAL:-@unipad}
+      UNIPAD_DEV_MOCK: ${UNIPAD_DEV_MOCK:-false}
+      CREATOR_RATE_LIMIT_STRICT: "true"
+      GLOBAL_RATE_LIMIT_PER_MIN: ${GLOBAL_RATE_LIMIT_PER_MIN:-300}
+      AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-20}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8787"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Edge load balancer — public entry for API + WS (port 8080)
+  nginx:
+    profiles: ["edge"]
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   unipad_pg:

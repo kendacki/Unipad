@@ -14,5 +14,8 @@ apps/api/data
 *.pem
 .vercel
 
+# Local hero upscale source (published asset is hero-bg.webp)
+apps/web/public/hero-bg-source.png
+
 tsbuildinfo
 *.tsbuildinfo

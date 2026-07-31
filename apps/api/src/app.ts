@@ -65,6 +65,13 @@ export function buildApp() {
     }),
   );
 
+  // Baseline API shaping — load balancer also enforces edge limits.
+  // /health stays unlimited so LB probes never trip application buckets.
+  app.use(
+    "/v1/*",
+    rateLimit({ name: "global", limit: env.globalRateLimitPerMin }),
+  );
+
   app.get("/health", (c) =>
     c.json({
       ok: true,
@@ -75,7 +82,10 @@ export function buildApp() {
   );
 
   // Static uploads (media pipeline local origin)
-  app.get("/uploads/:file", async (c) => {
+  app.get(
+    "/uploads/:file",
+    rateLimit({ name: "uploads", limit: 120 }),
+    async (c) => {
     const file = c.req.param("file").replace(/[^a-zA-Z0-9._-]/g, "");
     try {
       const buf = await readFile(join(env.uploadDir, file));
@@ -94,43 +104,56 @@ export function buildApp() {
     } catch {
       return c.json({ error: "Not found" }, 404);
     }
-  });
+  },
+  );
 
-  // --- Auth ---
-  app.get("/v1/auth/challenge", async (c) => {
-    const chainPubkey = c.req.query("chainPubkey");
-    if (!chainPubkey) return c.json({ error: "chainPubkey required" }, 400);
-    try {
-      return c.json(await issueChallenge(chainPubkey.toLowerCase()));
-    } catch (err) {
-      return c.json({ error: (err as Error).message }, 400);
-    }
-  });
+  // --- Auth (strict — challenge spam / credential stuffing) ---
+  app.get(
+    "/v1/auth/challenge",
+    rateLimit({ name: "auth", limit: env.authRateLimitPerMin }),
+    async (c) => {
+      const chainPubkey = c.req.query("chainPubkey");
+      if (!chainPubkey) return c.json({ error: "chainPubkey required" }, 400);
+      try {
+        return c.json(await issueChallenge(chainPubkey.toLowerCase()));
+      } catch (err) {
+        return c.json({ error: (err as Error).message }, 400);
+      }
+    },
+  );
 
-  app.post("/v1/auth/verify", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const { nonce, signature } = body as { nonce?: string; signature?: string };
-    if (!nonce || !signature) {
-      return c.json({ error: "nonce and signature required" }, 400);
-    }
-    try {
-      return c.json(await verifyChallenge(nonce, signature));
-    } catch (err) {
-      return c.json({ error: (err as Error).message }, 401);
-    }
-  });
+  app.post(
+    "/v1/auth/verify",
+    rateLimit({ name: "auth", limit: env.authRateLimitPerMin }),
+    async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const { nonce, signature } = body as { nonce?: string; signature?: string };
+      if (!nonce || !signature) {
+        return c.json({ error: "nonce and signature required" }, 400);
+      }
+      try {
+        return c.json(await verifyChallenge(nonce, signature));
+      } catch (err) {
+        return c.json({ error: (err as Error).message }, 401);
+      }
+    },
+  );
 
-  app.post("/v1/auth/mock", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-    const role = (body as { role?: string }).role === "buyer" ? "buyer" : "creator";
-    try {
-      return c.json(await mockSession(role));
-    } catch (err) {
-      return c.json({ error: (err as Error).message }, 403);
-    }
-  });
+  app.post(
+    "/v1/auth/mock",
+    rateLimit({ name: "auth", limit: Math.min(10, env.authRateLimitPerMin) }),
+    async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const role = (body as { role?: string }).role === "buyer" ? "buyer" : "creator";
+      try {
+        return c.json(await mockSession(role));
+      } catch (err) {
+        return c.json({ error: (err as Error).message }, 403);
+      }
+    },
+  );
 
-  app.get("/v1/me", async (c) => {
+  app.get("/v1/me", rateLimit({ name: "session", limit: 60 }), async (c) => {
     try {
       const session = await requireAuth(c.req.header("Authorization"));
       return c.json({ principal: session.principal, mock: session.mock });
@@ -151,9 +174,13 @@ export function buildApp() {
     return c.json(col);
   });
 
-  app.get("/v1/wallets/:principal/tokens", async (c) => {
-    return c.json({ tokens: await collections.listWalletTokens(c.req.param("principal")) });
-  });
+  app.get(
+    "/v1/wallets/:principal/tokens",
+    rateLimit({ name: "storefront", limit: 60 }),
+    async (c) => {
+      return c.json({ tokens: await collections.listWalletTokens(c.req.param("principal")) });
+    },
+  );
 
   // --- Media ---
   app.post(
@@ -363,16 +390,20 @@ export function buildApp() {
     },
   );
 
-  app.get("/v1/collections/:id/mint-status/:idempotencyKey", async (c) => {
-    try {
-      const session = await requireAuth(c.req.header("Authorization"));
-      return c.json(
-        await collections.getMintStatus(c.req.param("idempotencyKey"), session.principal),
-      );
-    } catch (err) {
-      return handleErr(c, err);
-    }
-  });
+  app.get(
+    "/v1/collections/:id/mint-status/:idempotencyKey",
+    rateLimit({ name: "mint", limit: 60, walletAware: true }),
+    async (c) => {
+      try {
+        const session = await requireAuth(c.req.header("Authorization"));
+        return c.json(
+          await collections.getMintStatus(c.req.param("idempotencyKey"), session.principal),
+        );
+      } catch (err) {
+        return handleErr(c, err);
+      }
+    },
+  );
 
   return app;
 }

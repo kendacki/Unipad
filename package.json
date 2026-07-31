@@ -11,6 +11,9 @@
     "build": "pnpm -r build",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
+    "edge:up": "docker compose --profile edge up -d --build",
+    "edge:down": "docker compose --profile edge down",
+    "edge:scale": "docker compose --profile edge up -d --scale api=2",
     "db:migrate": "pnpm --filter @unipad/api db:migrate",
     "db:seed": "pnpm --filter @unipad/api db:seed"
   },

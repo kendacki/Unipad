@@ -99,7 +99,37 @@ Copy `.env.example` to `.env` and keep secrets out of git. Never commit a real `
 
 ---
 
-## 7. Deploy the Website on Vercel
+## 7. Rate limiting and load balancing
+
+Unipad applies **defense in depth**:
+
+| Layer | What it does |
+|-------|----------------|
+| Application (`apps/api`) | Per-route Redis (or in-memory) buckets: global `/v1/*`, auth, storefront, creators, mint (IP + wallet), media |
+| Edge nginx (`deploy/nginx`) | `least_conn` across API replicas, connection limits, stricter `limit_req` on auth/mint |
+| Web (Vercel) | Platform edge / DDoS protection for the Next.js storefront |
+
+`/health` is not rate-limited so load balancer probes stay reliable. Rate-limit responses use HTTP **429**, `Retry-After`, and `X-RateLimit-*` headers.
+
+### Local data plane (Postgres + Redis)
+
+```bash
+pnpm db:up
+```
+
+### Optional edge stack (API + nginx LB on :8080)
+
+```bash
+pnpm edge:up
+# scale API replicas (nginx least_conn + Docker DNS):
+pnpm edge:scale
+```
+
+Point `NEXT_PUBLIC_API_URL` / `PUBLIC_API_URL` at `http://localhost:8080` when using the edge profile.
+
+---
+
+## 8. Deploy the Website on Vercel
 
 1. Import this repository into Vercel.
 2. Set the **Root Directory** to `apps/web`.
@@ -127,10 +157,13 @@ Copy `.env.example` to `.env` and keep secrets out of git. Never commit a real `
 | `TREASURY_PRINCIPAL` | Sphere account that receives mint payments |
 | `JWT_SECRET` | Strong secret for login sessions |
 | `UNIPAD_DEV_MOCK` | Set to `false` in production |
+| `REDIS_URL` | Required in production for shared rate-limit buckets across replicas |
+| `GLOBAL_RATE_LIMIT_PER_MIN` | Baseline `/v1/*` IP limit (default 300) |
+| `AUTH_RATE_LIMIT_PER_MIN` | Auth challenge/verify limit (default 20) |
 
 ---
 
-## 8. Main Features
+## 9. Main Features
 
 | Feature | Status |
 |---------|--------|
@@ -142,6 +175,7 @@ Copy `.env.example` to `.env` and keep secrets out of git. Never commit a real `
 | My mints | Done |
 | Creator earnings (royalties) | Done |
 | Local image upload | Done |
+| API rate limits + nginx load balancer | Done |
 
 ### Not included yet
 
@@ -151,19 +185,21 @@ Copy `.env.example` to `.env` and keep secrets out of git. Never commit a real `
 
 ---
 
-## 9. Useful Commands
+## 10. Useful Commands
 
 | Command | What it does |
 |---------|----------------|
 | `pnpm dev` | Start website and API together |
 | `pnpm db:up` | Start Postgres and Redis |
+| `pnpm edge:up` | Start API + nginx load balancer (profile `edge`) |
+| `pnpm edge:scale` | Run 2 API replicas behind nginx |
 | `pnpm db:migrate` | Create database tables |
 | `pnpm db:seed` | Add sample drop data |
 | `pnpm --filter @unipad/web build` | Build the website for production |
 
 ---
 
-## 10. License and Contact
+## 11. License and Contact
 
 This project is the Unipad MVP codebase for Unicity.
 

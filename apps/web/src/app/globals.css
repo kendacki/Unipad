@@ -1631,19 +1631,21 @@ h3,
   }
 }
 
-/* Site footer — card layout, no nav links */
+/* Site footer — white glass card, no nav links */
 .site-footer {
   padding: 2.5rem 0 3rem;
-  background:
-    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(255, 106, 0, 0.06) 0%, transparent 55%),
-    var(--paper-2);
+  background: #f3f3f3;
 }
 
 .site-footer-card {
-  background: var(--white);
-  border: 1px solid rgba(10, 10, 10, 0.08);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.85);
   border-radius: 22px;
-  box-shadow: 0 18px 50px rgba(10, 10, 10, 0.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 12px 40px rgba(10, 10, 10, 0.06);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
   overflow: hidden;
 }
 
@@ -1694,7 +1696,8 @@ h3,
   gap: 1rem;
   flex-wrap: wrap;
   padding: 1.1rem clamp(1.75rem, 3.5vw, 2.5rem);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(10, 10, 10, 0.08);
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .site-footer-copy,
@@ -1706,6 +1709,12 @@ h3,
 
 .site-footer-note {
   font-weight: 500;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .site-footer-card {
+    background: rgba(255, 255, 255, 0.94);
+  }
 }
 
 @media (max-width: 640px) {
