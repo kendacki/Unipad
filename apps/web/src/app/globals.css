@@ -1453,8 +1453,8 @@ h3,
 }
 
 .step-help {
-  margin: -0.75rem 0 1.25rem;
-  font-size: 0.9rem;
+  margin: -0.35rem 0 0.9rem;
+  font-size: 0.88rem;
   color: var(--ink-soft);
 }
 
@@ -1595,6 +1595,152 @@ h3,
 .form-grid select:focus {
   outline: 2px solid rgba(255, 106, 0, 0.35);
   border-color: var(--orange);
+}
+
+/* Create drop */
+.launch-shell {
+  max-width: 640px;
+}
+
+.launch-head {
+  margin-bottom: 1rem;
+}
+
+.launch-head h2 {
+  margin: 0;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
+}
+
+.launch-head p {
+  margin: 0.3rem 0 0;
+  color: var(--ink-soft);
+}
+
+.launch-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.15rem 1.2rem;
+  border-radius: 12px;
+  background: var(--white);
+  border: 1px solid rgba(10, 10, 10, 0.1);
+  box-shadow: 0 8px 24px rgba(10, 10, 10, 0.04);
+}
+
+.launch-card label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--black);
+}
+
+.launch-card input,
+.launch-card textarea,
+.launch-card select {
+  border: 1px solid var(--line);
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 0.7rem 0.8rem;
+  color: var(--black);
+  font: inherit;
+}
+
+.launch-card input:focus,
+.launch-card textarea:focus,
+.launch-card select:focus {
+  outline: 2px solid rgba(255, 106, 0, 0.3);
+  border-color: var(--orange);
+  background: var(--white);
+}
+
+.launch-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.launch-cover {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.launch-block {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.15rem;
+}
+
+.launch-phases {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.launch-phase {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(10, 10, 10, 0.08);
+  background: #fafafa;
+}
+
+.launch-phase.is-on {
+  background: var(--white);
+  border-color: rgba(255, 106, 0, 0.28);
+}
+
+.launch-phase-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem !important;
+}
+
+.launch-phase-toggle input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--orange);
+}
+
+.launch-phase-price {
+  max-width: 10rem;
+}
+
+.launch-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.15rem;
+}
+
+.launch-review {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.launch-review h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+}
+
+.launch-review ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--ink-soft);
+}
+
+.launch-review-desc {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 560px) {
+  .launch-row-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cover-upload-row {
@@ -1863,8 +2009,8 @@ h3,
 
 .wizard-steps {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.75rem;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
   flex-wrap: wrap;
 }
 
