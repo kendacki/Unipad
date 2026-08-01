@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { m } from "framer-motion";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
@@ -65,11 +65,6 @@ export default function RoyaltiesPage() {
     };
   }, [token, toast]);
 
-  const netTotal = useMemo(() => {
-    if (!summary) return "0";
-    return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
-  }, [summary]);
-
   const amount = (value?: string) =>
     loading && !summary ? "…" : formatUct(value ?? "0");
 
@@ -131,7 +126,6 @@ export default function RoyaltiesPage() {
               {amount(summary?.accruedUct)}
               <span> UCT</span>
             </strong>
-            <span className="earnings-stat-meta">Lifetime {formatUct(netTotal)}</span>
           </div>
           <div className="earnings-stat">
             <span className="earnings-stat-label">Gross</span>
