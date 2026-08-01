@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { m } from "framer-motion";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
   formatUct,
+  parseUct,
   type RoyaltyEntry,
   type RoyaltySummary,
 } from "@unipad/shared";
 import { api } from "@/lib/api";
+import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { fadeUp, springSnappy } from "@/lib/motion";
@@ -30,48 +32,121 @@ function statusLabel(status: string) {
 
 export default function RoyaltiesPage() {
   const toast = useToast();
-  const { token, connectSphere, connecting } = useWallet();
+  const {
+    token,
+    connectSphere,
+    connecting,
+    sphereReady,
+    ensureSphereForPayment,
+    payUct,
+  } = useWallet();
   const [summary, setSummary] = useState<RoyaltySummary | null>(null);
   const [entries, setEntries] = useState<RoyaltyEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [recipient, setRecipient] = useState("");
+  const [amountDisplay, setAmountDisplay] = useState("");
+  const [paying, setPaying] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const r = await api.royalties(token);
+      setSummary({ ...emptySummary(), ...r.summary });
+      setEntries(r.entries);
+    } catch (e) {
+      const code =
+        e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
+      if (code === "UPAD_UNAUTHORIZED" || code === "UPAD_AUTH_FAILED") {
+        toast.error(e);
+      } else {
+        setSummary(emptySummary());
+        setEntries([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [token, toast]);
 
   useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    setLoading(true);
-    api
-      .royalties(token)
-      .then((r) => {
-        if (cancelled) return;
-        setSummary({ ...emptySummary(), ...r.summary });
-        setEntries(r.entries);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        const code =
-          e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
-        if (code === "UPAD_UNAUTHORIZED" || code === "UPAD_AUTH_FAILED") {
-          toast.error(e);
-        } else {
-          setSummary(emptySummary());
-          setEntries([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, toast]);
+    void refresh();
+  }, [refresh]);
 
   const earnedTotal = useMemo(() => {
     if (!summary) return "0";
     return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
   }, [summary]);
 
+  const balanceBase = summary?.accruedUct ?? "0";
+  const balanceDisplay = formatUct(balanceBase);
+  const hasBalance = BigInt(balanceBase || "0") > 0n;
+
   const amount = (value?: string) =>
     loading && !summary ? "…" : formatUct(value ?? "0");
+
+  function fillMax() {
+    setAmountDisplay(balanceDisplay);
+  }
+
+  async function sendPayout() {
+    if (!token) return;
+    const to = recipient.trim();
+    if (!to) {
+      toast.error("Enter a recipient @nametag");
+      return;
+    }
+
+    let amountUct: string;
+    try {
+      amountUct = parseUct(amountDisplay.trim() || "0");
+    } catch {
+      toast.error("Enter a valid UCT amount");
+      return;
+    }
+    if (BigInt(amountUct) <= 0n) {
+      toast.error("Amount must be greater than zero");
+      return;
+    }
+    if (BigInt(amountUct) > BigInt(balanceBase || "0")) {
+      toast.error("Amount exceeds available balance");
+      return;
+    }
+
+    const ok = await toast.confirm({
+      title: "Send payout?",
+      message: `Send ${formatUct(amountUct)} UCT to ${to.startsWith("@") ? to : `@${to}`} from your earnings balance. This moves the amount into Paid out.`,
+      confirmLabel: "Pay with Sphere",
+      cancelLabel: "Cancel",
+    });
+    if (!ok) return;
+
+    setPaying(true);
+    try {
+      await ensureSphereForPayment();
+      prepareSpherePaymentWindow();
+      const paymentRef = await payUct({
+        recipient: to,
+        amount: amountUct,
+        memo: `unipad-earnings-payout:${amountUct}`,
+      });
+
+      const result = await api.payoutRoyalties(token, {
+        amountUct,
+        recipient: to,
+        paymentRef,
+      });
+      setSummary({ ...emptySummary(), ...result.summary });
+      setEntries(result.entries);
+      setAmountDisplay("");
+      setRecipient("");
+      toast.success("Payout sent", `${formatUct(result.paidUct)} UCT moved to Paid out.`);
+    } catch (e) {
+      toast.error(e);
+      void refresh();
+    } finally {
+      setPaying(false);
+    }
+  }
 
   if (!token) {
     return (
@@ -155,17 +230,88 @@ export default function RoyaltiesPage() {
         </m.div>
 
         <m.div
+          className="earnings-payout"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...springSnappy, delay: 0.04 }}
+        >
+          <div className="earnings-payout-copy">
+            <h3>Send payout</h3>
+            <p>Send available balance to another Sphere user. Completed sends move into Paid out.</p>
+          </div>
+
+          <div className="earnings-payout-grid">
+            <label className="earnings-field">
+              <span>Recipient</span>
+              <input
+                type="text"
+                className="input"
+                placeholder="@nametag"
+                autoComplete="off"
+                spellCheck={false}
+                value={recipient}
+                disabled={paying || !hasBalance}
+                onChange={(e) => setRecipient(e.target.value)}
+              />
+            </label>
+
+            <label className="earnings-field">
+              <span>Amount</span>
+              <div className="earnings-amount-row">
+                <input
+                  type="text"
+                  className="input"
+                  inputMode="decimal"
+                  placeholder={balanceDisplay}
+                  value={amountDisplay}
+                  disabled={paying || !hasBalance}
+                  onChange={(e) => setAmountDisplay(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost earnings-max-btn"
+                  disabled={paying || !hasBalance}
+                  onClick={fillMax}
+                >
+                  Max
+                </button>
+              </div>
+            </label>
+          </div>
+
+          <div className="earnings-payout-actions">
+            <p className="earnings-payout-hint">
+              {hasBalance
+                ? `Available ${balanceDisplay} UCT`
+                : "No balance to send yet — sales credit here when someone mints your drop."}
+            </p>
+            <m.button
+              type="button"
+              className="btn btn-signal"
+              disabled={paying || !hasBalance || connecting}
+              whileHover={paying || !hasBalance ? undefined : { y: -1 }}
+              whileTap={paying || !hasBalance ? undefined : { scale: 0.98 }}
+              transition={springSnappy}
+              onClick={() => void sendPayout()}
+            >
+              {paying
+                ? "Sending…"
+                : !sphereReady
+                  ? "Connect Sphere to pay"
+                  : "Pay with Sphere"}
+            </m.button>
+          </div>
+        </m.div>
+
+        <m.div
           className="earnings-activity panel glass"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ ...springSnappy, delay: 0.06 }}
+          transition={{ ...springSnappy, delay: 0.08 }}
         >
           <div className="earnings-panel-head">
             <h3>Sales</h3>
-            <span
-              className="earnings-count-box"
-              aria-label={`${entries.length} sales`}
-            >
+            <span className="earnings-count-box" aria-label={`${entries.length} sales`}>
               {entries.length}
             </span>
           </div>
@@ -192,6 +338,9 @@ export default function RoyaltiesPage() {
                     <tr key={e.id}>
                       <td>
                         <strong>{e.collectionName}</strong>
+                        {e.payoutStatus === "paid" && e.payoutRecipient ? (
+                          <div className="earnings-paid-to">to {e.payoutRecipient}</div>
+                        ) : null}
                       </td>
                       <td className="muted">{formatUct(e.grossUct)} UCT</td>
                       <td>
@@ -207,7 +356,7 @@ export default function RoyaltiesPage() {
                         </span>
                       </td>
                       <td className="muted">
-                        {new Date(e.createdAt).toLocaleString(undefined, {
+                        {new Date(e.paidAt || e.createdAt).toLocaleString(undefined, {
                           dateStyle: "medium",
                           timeStyle: "short",
                         })}

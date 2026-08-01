@@ -112,6 +112,19 @@ export const api = {
       "/v1/creators/me/royalties",
       { token },
     ),
+  payoutRoyalties: (
+    token: string,
+    body: { amountUct: string; recipient: string; paymentRef?: string | null },
+  ) =>
+    request<{
+      summary: RoyaltySummary;
+      entries: RoyaltyEntry[];
+      paidUct: string;
+    }>("/v1/creators/me/royalties/payout", {
+      method: "POST",
+      token,
+      body: JSON.stringify(body),
+    }),
   /** Prefer Vercel Blob client upload for covers; falls back to API multipart. */
   uploadMedia: async (token: string, file: File, collectionId?: string) => {
     try {

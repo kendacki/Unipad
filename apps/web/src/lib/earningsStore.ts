@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
   normalizePlatformFeeBps,
+  normalizeSphereRecipient,
   splitMintProceeds,
   summarizeRoyaltyLedger,
   type RoyaltyEntry,
@@ -17,7 +18,18 @@ export type StoredSale = RoyaltyEntry & {
   creatorPrincipal: string;
   buyerPrincipal: string;
   tokenId: number;
+  payoutRef?: string | null;
 };
+
+export class EarningsHttpError extends Error {
+  status: number;
+  code: string;
+  constructor(message: string, status: number, code: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
 
 type MemoryDb = {
   byId: Map<string, StoredSale>;
@@ -110,11 +122,9 @@ async function listJsonUnder<T>(prefix: string): Promise<T[]> {
 }
 
 async function saveSale(sale: StoredSale) {
-  if (!useBlob()) {
-    memory().byId.set(sale.id, sale);
-    memory().bySaleId.set(sale.saleId, sale.id);
-    return;
-  }
+  memory().byId.set(sale.id, sale);
+  memory().bySaleId.set(sale.saleId, sale.id);
+  if (!useBlob()) return;
   await putJson(salePath(sale.id), sale);
   await putJson(saleIdPath(sale.saleId), { id: sale.id });
   await putJson(creatorSalePath(sale.creatorPrincipal, sale.id), sale);
@@ -194,7 +204,15 @@ export async function getCreatorEarnings(principal: string): Promise<{
     );
   } else {
     const safe = encodeURIComponent(key).slice(0, 120);
-    sales = await listJsonUnder<StoredSale>(`earnings/creators/${safe}/`);
+    const fromBlob = await listJsonUnder<StoredSale>(`earnings/creators/${safe}/`);
+    const byId = new Map<string, StoredSale>();
+    for (const s of fromBlob) {
+      if (s?.id) byId.set(s.id, s);
+    }
+    for (const s of memory().byId.values()) {
+      if (normalizeOwnerKey(s.creatorPrincipal) === key) byId.set(s.id, s);
+    }
+    sales = [...byId.values()];
   }
 
   const all = dedupeSales(sales);
@@ -210,7 +228,142 @@ export async function getCreatorEarnings(principal: string): Promise<{
     creatorNetUct: s.creatorNetUct,
     payoutStatus: s.payoutStatus,
     createdAt: s.createdAt,
+    paidAt: s.paidAt ?? null,
+    payoutRecipient: s.payoutRecipient ?? null,
   }));
 
   return { summary, entries };
+}
+
+/**
+ * Mark accrued sale credits as paid (FIFO) after the seller sends UCT to a recipient.
+ * Supports partial payout by splitting the last sale row.
+ */
+export async function applyCreatorPayout(
+  principal: string,
+  input: {
+    amountUct: string;
+    recipient: string;
+    paymentRef?: string | null;
+  },
+): Promise<{ summary: RoyaltySummary; entries: RoyaltyEntry[]; paidUct: string }> {
+  const key = normalizeOwnerKey(principal);
+  let amount: bigint;
+  try {
+    amount = BigInt(input.amountUct || "0");
+  } catch {
+    throw new EarningsHttpError("Invalid payout amount", 400, "UPAD_VALIDATION");
+  }
+  if (amount <= 0n) {
+    throw new EarningsHttpError("Enter an amount greater than zero", 400, "UPAD_VALIDATION");
+  }
+
+  let recipient: string;
+  try {
+    recipient = normalizeSphereRecipient(input.recipient);
+  } catch {
+    throw new EarningsHttpError(
+      "Recipient must be a Sphere @nametag or wallet",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
+  if (normalizeOwnerKey(recipient) === key) {
+    throw new EarningsHttpError("Send to a different user", 400, "UPAD_VALIDATION");
+  }
+
+  const { summary: before, entries: _e } = await getCreatorEarnings(principal);
+  const accrued = BigInt(before.accruedUct || "0");
+  if (amount > accrued) {
+    throw new EarningsHttpError("Amount exceeds available balance", 400, "UPAD_VALIDATION");
+  }
+
+  const keySafe = encodeURIComponent(key).slice(0, 120);
+  let sales: StoredSale[] = [];
+  if (!useBlob()) {
+    sales = [...memory().byId.values()].filter(
+      (s) => normalizeOwnerKey(s.creatorPrincipal) === key,
+    );
+  } else {
+    const fromBlob = await listJsonUnder<StoredSale>(`earnings/creators/${keySafe}/`);
+    const byId = new Map<string, StoredSale>();
+    for (const s of fromBlob) {
+      if (s?.id) byId.set(s.id, s);
+    }
+    for (const s of memory().byId.values()) {
+      if (normalizeOwnerKey(s.creatorPrincipal) === key) byId.set(s.id, s);
+    }
+    sales = [...byId.values()];
+  }
+
+  const accruedSales = dedupeSales(sales)
+    .filter((s) => s.payoutStatus !== "paid")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  let remaining = amount;
+  const now = new Date().toISOString();
+  const paymentRef = input.paymentRef?.trim() || null;
+
+  for (const sale of accruedSales) {
+    if (remaining <= 0n) break;
+    const net = BigInt(sale.creatorNetUct || "0");
+    if (net <= 0n) continue;
+
+    if (remaining >= net) {
+      const next: StoredSale = {
+        ...sale,
+        payoutStatus: "paid",
+        paidAt: now,
+        payoutRecipient: recipient,
+        payoutRef: paymentRef,
+      };
+      await saveSale(next);
+      remaining -= net;
+      continue;
+    }
+
+    // Partial: mark this slice paid, leave remainder accrued as a new row.
+    const paidNet = remaining;
+    const leftNet = net - paidNet;
+    const feeTotal = BigInt(sale.platformFeeUct || "0");
+    const grossTotal = BigInt(sale.grossUct || "0");
+    const paidFee = feeTotal > 0n && net > 0n ? (feeTotal * paidNet) / net : 0n;
+    const paidGross = paidNet + paidFee;
+    const leftFee = feeTotal - paidFee;
+    const leftGross = grossTotal - paidGross;
+
+    const paidRow: StoredSale = {
+      ...sale,
+      id: `${sale.id}-p${nanoid(6)}`,
+      saleId: `${sale.saleId}:payout:${nanoid(8)}`,
+      grossUct: paidGross.toString(),
+      platformFeeUct: paidFee.toString(),
+      creatorNetUct: paidNet.toString(),
+      payoutStatus: "paid",
+      paidAt: now,
+      payoutRecipient: recipient,
+      payoutRef: paymentRef,
+      createdAt: sale.createdAt,
+    };
+    const leftRow: StoredSale = {
+      ...sale,
+      grossUct: leftGross > 0n ? leftGross.toString() : "0",
+      platformFeeUct: leftFee > 0n ? leftFee.toString() : "0",
+      creatorNetUct: leftNet.toString(),
+      payoutStatus: "accrued",
+      paidAt: null,
+      payoutRecipient: null,
+      payoutRef: null,
+    };
+    await saveSale(paidRow);
+    await saveSale(leftRow);
+    remaining = 0n;
+  }
+
+  if (remaining > 0n) {
+    throw new EarningsHttpError("Could not allocate full payout amount", 500, "UPAD_UNKNOWN");
+  }
+
+  const result = await getCreatorEarnings(principal);
+  return { ...result, paidUct: amount.toString() };
 }

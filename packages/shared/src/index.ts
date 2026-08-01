@@ -129,6 +129,10 @@ export interface RoyaltyEntry {
   creatorNetUct: string;
   payoutStatus: string;
   createdAt: string;
+  /** When the seller sent this credit out (Sphere payout). */
+  paidAt?: string | null;
+  /** @nametag or principal the seller paid. */
+  payoutRecipient?: string | null;
 }
 
 /** Default primary-mint platform fee: 2.5% (250 bps). */
