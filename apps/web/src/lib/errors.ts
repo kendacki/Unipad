@@ -27,6 +27,12 @@ const CATALOG: Record<string, ErrorInfo> = {
     title: "Sold out",
     message: "This drop has no more items left to mint.",
   },
+  UPAD_REFUND_PENDING: {
+    code: "UPAD_REFUND_PENDING",
+    title: "Refund pending",
+    message:
+      "You paid but a mint slot was not available. Your payment is cancelled for refund automatically.",
+  },
   UPAD_NOT_ALLOWLISTED: {
     code: "UPAD_NOT_ALLOWLISTED",
     title: "Not on the list",
@@ -122,6 +128,9 @@ const CATALOG: Record<string, ErrorInfo> = {
 const MESSAGE_TO_CODE: Array<[RegExp | string, string]> = [
   ["Sold out", "UPAD_SOLD_OUT"],
   ["sold_out", "UPAD_SOLD_OUT"],
+  ["Refund pending", "UPAD_REFUND_PENDING"],
+  ["refund_pending", "UPAD_REFUND_PENDING"],
+  ["automatic refund", "UPAD_REFUND_PENDING"],
   ["Wallet not on allowlist", "UPAD_NOT_ALLOWLISTED"],
   ["Allowlist mint cap", "UPAD_MINT_CAP"],
   ["Wallet mint cap", "UPAD_MINT_CAP"],

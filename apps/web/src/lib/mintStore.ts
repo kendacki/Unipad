@@ -32,6 +32,8 @@ export type StoredIntent = {
   status: MintStatus;
   expiresAt: string;
   paymentRef?: string;
+  /** Atomically claimed supply slot held until mint confirms or intent expires. */
+  reservedTokenId?: number;
   tokenId?: number;
   mintTxRef?: string;
   reason?: string;
@@ -51,15 +53,26 @@ export type StoredToken = {
   idempotencyKey: string;
 };
 
+type ReservationRow = {
+  collectionId: string;
+  tokenId: number;
+  idempotencyKey: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
 type MemoryDb = {
   intents: Map<string, StoredIntent>;
   tokens: Map<string, StoredToken>;
   payments: Map<string, string>;
+  reservations: Map<string, ReservationRow>;
 };
 
 declare global {
   // eslint-disable-next-line no-var
   var __unipadMintMemory: MemoryDb | undefined;
+  // eslint-disable-next-line no-var
+  var __unipadMintClaimLocks: Map<string, Promise<unknown>> | undefined;
 }
 
 function memory(): MemoryDb {
@@ -68,9 +81,35 @@ function memory(): MemoryDb {
       intents: new Map(),
       tokens: new Map(),
       payments: new Map(),
+      reservations: new Map(),
     };
   }
   return globalThis.__unipadMintMemory;
+}
+
+function claimLocks(): Map<string, Promise<unknown>> {
+  if (!globalThis.__unipadMintClaimLocks) {
+    globalThis.__unipadMintClaimLocks = new Map();
+  }
+  return globalThis.__unipadMintClaimLocks;
+}
+
+/** Serialize slot claims per collection within one serverless instance. */
+async function withCollectionClaimLock<T>(collectionId: string, fn: () => Promise<T>): Promise<T> {
+  const locks = claimLocks();
+  const prev = locks.get(collectionId) ?? Promise.resolve();
+  let release!: () => void;
+  const hold = new Promise<void>((r) => {
+    release = r;
+  });
+  const tail = prev.then(() => hold);
+  locks.set(collectionId, tail.catch(() => undefined));
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
 }
 
 function useBlob(): boolean {
@@ -161,6 +200,14 @@ function tokenPath(collectionId: string, tokenId: number) {
 function paymentPath(paymentRef: string) {
   const safe = encodeURIComponent(paymentRef).slice(0, 180);
   return `mints/payments/${safe}.json`;
+}
+
+function reservationPath(collectionId: string, tokenId: number) {
+  return `mints/reservations/${collectionId}/${tokenId}.json`;
+}
+
+function reservationMemKey(collectionId: string, tokenId: number) {
+  return `${collectionId}:${tokenId}`;
 }
 
 function walletTokenPath(principal: string, collectionId: string, tokenId: number) {
@@ -254,11 +301,147 @@ export async function countMinted(collectionId: string): Promise<number> {
   return n;
 }
 
+async function tokenExists(collectionId: string, tokenId: number): Promise<boolean> {
+  if (!useBlob()) {
+    return memory().tokens.has(`${collectionId}:${tokenId}`);
+  }
+  return Boolean(await getJson(tokenPath(collectionId, tokenId)));
+}
+
+async function loadReservation(
+  collectionId: string,
+  tokenId: number,
+): Promise<ReservationRow | null> {
+  const mem = memory().reservations.get(reservationMemKey(collectionId, tokenId));
+  if (!useBlob()) return mem ?? null;
+  const row = await getJson<ReservationRow>(reservationPath(collectionId, tokenId));
+  return row ?? mem ?? null;
+}
+
+async function releaseReservation(
+  collectionId: string,
+  tokenId: number,
+  idempotencyKey: string,
+): Promise<void> {
+  const key = reservationMemKey(collectionId, tokenId);
+  const row = await loadReservation(collectionId, tokenId);
+  if (row && row.idempotencyKey !== idempotencyKey) return;
+  memory().reservations.delete(key);
+  if (!useBlob()) return;
+  try {
+    await del(reservationPath(collectionId, tokenId), {
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+    });
+  } catch {
+    /* missing is fine */
+  }
+}
+
+/** Atomically claim one supply slot (Blob put overwrite:false / memory map). */
+async function tryClaimSlot(
+  collectionId: string,
+  tokenId: number,
+  idempotencyKey: string,
+  expiresAt: string,
+): Promise<boolean> {
+  if (tokenId < 1) return false;
+  if (await tokenExists(collectionId, tokenId)) return false;
+
+  const existing = await loadReservation(collectionId, tokenId);
+  if (existing) {
+    if (existing.idempotencyKey === idempotencyKey) return true;
+    if (Date.parse(existing.expiresAt) > Date.now()) return false;
+    // Expired reservation — reclaim.
+  }
+
+  const row: ReservationRow = {
+    collectionId,
+    tokenId,
+    idempotencyKey,
+    expiresAt,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (!useBlob()) {
+    const key = reservationMemKey(collectionId, tokenId);
+    const cur = memory().reservations.get(key);
+    if (cur && cur.idempotencyKey !== idempotencyKey && Date.parse(cur.expiresAt) > Date.now()) {
+      return false;
+    }
+    memory().reservations.set(key, row);
+    return true;
+  }
+
+  try {
+    await putJson(reservationPath(collectionId, tokenId), row, {
+      overwrite: Boolean(existing && Date.parse(existing.expiresAt) <= Date.now()),
+    });
+    memory().reservations.set(reservationMemKey(collectionId, tokenId), row);
+    return true;
+  } catch {
+    const again = await loadReservation(collectionId, tokenId);
+    return again?.idempotencyKey === idempotencyKey;
+  }
+}
+
+/**
+ * Claim the next free token id for this collection.
+ * Survives multi-instance races via Blob overwrite:false on each slot file.
+ */
+async function claimNextSlot(
+  collectionId: string,
+  totalSupply: number,
+  idempotencyKey: string,
+  expiresAt: string,
+): Promise<number | null> {
+  return withCollectionClaimLock(collectionId, async () => {
+    const minted = await countMinted(collectionId);
+    if (minted >= totalSupply) return null;
+
+    const tryIds: number[] = [];
+    for (let id = minted + 1; id <= totalSupply; id++) tryIds.push(id);
+    for (let id = 1; id <= minted; id++) tryIds.push(id);
+
+    for (const id of tryIds) {
+      if (await tryClaimSlot(collectionId, id, idempotencyKey, expiresAt)) {
+        return id;
+      }
+    }
+    return null;
+  });
+}
+
+async function countActiveReservations(collectionId: string): Promise<number> {
+  const now = Date.now();
+  if (!useBlob()) {
+    let n = 0;
+    for (const row of memory().reservations.values()) {
+      if (row.collectionId === collectionId && Date.parse(row.expiresAt) > now) n += 1;
+    }
+    return n;
+  }
+  let n = 0;
+  try {
+    const rows = await listJsonUnder<ReservationRow>(`mints/reservations/${collectionId}/`);
+    for (const row of rows) {
+      if (row && Date.parse(row.expiresAt) > now) n += 1;
+    }
+  } catch {
+    /* ignore */
+  }
+  return n;
+}
+
 export async function withLiveSupply(collection: Collection): Promise<Collection> {
   const mintedCount = await countMinted(collection.id);
-  const remainingSupply = Math.max(0, collection.totalSupply - mintedCount);
+  const reserved = await countActiveReservations(collection.id);
+  const remainingSupply = Math.max(0, collection.totalSupply - mintedCount - reserved);
   let status = collection.status;
   if (remainingSupply === 0 && mintedCount > 0) status = "sold_out";
+  else if (remainingSupply === 0 && reserved > 0 && collection.status === "live") {
+    // All remaining units are held by in-flight mints.
+    status = "live";
+  }
   return {
     ...collection,
     mintedCount,
@@ -534,6 +717,18 @@ export async function createMintIntent(
   const idempotencyKey = nanoid(28);
   const paymentMemo = `unipad:${idempotencyKey}`;
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  // Claim a real supply slot before the buyer pays — prevents oversell under load.
+  const reservedTokenId = await claimNextSlot(
+    collection.id,
+    collection.totalSupply,
+    idempotencyKey,
+    expiresAt,
+  );
+  if (reservedTokenId == null) {
+    throw new MintHttpError("Sold out", 409, "UPAD_SOLD_OUT");
+  }
+
   const intent: StoredIntent = {
     idempotencyKey,
     collectionId: collection.id,
@@ -543,10 +738,16 @@ export async function createMintIntent(
     paymentMemo,
     status: "awaiting_payment",
     expiresAt,
+    reservedTokenId,
     createdAt: new Date().toISOString(),
   };
 
-  await saveIntent(intent);
+  try {
+    await saveIntent(intent);
+  } catch (err) {
+    await releaseReservation(collection.id, reservedTokenId, idempotencyKey);
+    throw err;
+  }
 
   return {
     idempotencyKey,
@@ -605,7 +806,23 @@ export async function submitMint(params: {
     };
   }
 
-  if (intent.expiresAt && Date.parse(intent.expiresAt) < Date.now()) {
+  if (intent.status === "refund_pending") {
+    return {
+      status: "refund_pending",
+      idempotencyKey,
+      reason: intent.reason || "sold_out",
+    };
+  }
+
+  const expired = Boolean(intent.expiresAt && Date.parse(intent.expiresAt) < Date.now());
+  if (expired && intent.status === "awaiting_payment") {
+    if (intent.reservedTokenId != null) {
+      await releaseReservation(intent.collectionId, intent.reservedTokenId, idempotencyKey);
+    }
+    intent.status = "rejected";
+    intent.reason = "expired";
+    delete intent.reservedTokenId;
+    await saveIntent(intent);
     throw new MintHttpError("Mint intent expired — tap Mint again", 400, "UPAD_VALIDATION");
   }
 
@@ -636,26 +853,27 @@ export async function submitMint(params: {
     throw new MintHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
   }
 
-  const collection = await withLiveSupply(collectionBase);
-  if (collection.remainingSupply <= 0) {
-    intent.status = "rejected";
-    intent.reason = "sold_out";
-    await saveIntent(intent);
-    return { status: "rejected", idempotencyKey, reason: "sold_out" };
-  }
-
   if (await paymentUsed(paymentRef)) {
+    const existingIntent = intent.paymentRef === paymentRef ? intent : null;
+    if (existingIntent?.status === "confirmed" && existingIntent.tokenId != null) {
+      return {
+        status: "confirmed",
+        idempotencyKey,
+        tokenId: existingIntent.tokenId,
+        mintTxRef: existingIntent.mintTxRef,
+      };
+    }
     throw new MintHttpError("paymentRef already used", 409, "UPAD_PAYMENT_USED");
   }
 
   const phase =
-    collection.phases.find((p) => p.id === intent.phaseId) ??
-    collection.activePhase ??
-    collection.phases[0];
+    collectionBase.phases.find((p) => p.id === intent.phaseId) ??
+    collectionBase.activePhase ??
+    collectionBase.phases[0];
   let phaseCap = phase?.maxPerWallet ?? 1;
   if (phase) {
     try {
-      const al = await assertAllowlisted(collection.id, walletPrincipal, phase);
+      const al = await assertAllowlisted(collectionBase.id, walletPrincipal, phase);
       if (al) phaseCap = Math.min(phaseCap, al.maxMints);
     } catch (err) {
       if (err instanceof ListingHttpError) {
@@ -664,21 +882,69 @@ export async function submitMint(params: {
       throw err;
     }
   }
-  const owned = await countOwned(collection.id, walletPrincipal);
+  const owned = await countOwned(collectionBase.id, walletPrincipal);
   if (phase && owned >= phaseCap) {
-    throw new MintHttpError("Wallet mint cap reached for this phase", 403, "UPAD_MINT_CAP");
+    // Cap hit after pay — auto-cancel slot and flag refund.
+    if (intent.reservedTokenId != null) {
+      await releaseReservation(intent.collectionId, intent.reservedTokenId, idempotencyKey);
+    }
+    try {
+      await markPayment(paymentRef, idempotencyKey);
+    } catch {
+      /* already tracked */
+    }
+    intent.status = "refund_pending";
+    intent.reason = "mint_cap";
+    intent.paymentRef = paymentRef;
+    delete intent.reservedTokenId;
+    await saveIntent(intent);
+    return { status: "refund_pending", idempotencyKey, reason: "mint_cap" };
   }
 
-  const tokenId = collection.mintedCount + 1;
-  const mintTxRef = `uct-mint:${collection.id}:${tokenId}:${nanoid(10)}`;
+  // Ensure we still hold a supply slot (re-claim if missing / expired after pay).
+  let reservedTokenId = intent.reservedTokenId ?? null;
+  if (reservedTokenId != null) {
+    const held = await tryClaimSlot(
+      intent.collectionId,
+      reservedTokenId,
+      idempotencyKey,
+      intent.expiresAt,
+    );
+    if (!held) reservedTokenId = null;
+  }
+  if (reservedTokenId == null) {
+    reservedTokenId = await claimNextSlot(
+      intent.collectionId,
+      collectionBase.totalSupply,
+      idempotencyKey,
+      new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    );
+  }
+
+  if (reservedTokenId == null) {
+    // Paid but no supply left — automatic refund path.
+    try {
+      await markPayment(paymentRef, idempotencyKey);
+    } catch {
+      /* already tracked */
+    }
+    intent.status = "refund_pending";
+    intent.reason = "sold_out";
+    intent.paymentRef = paymentRef;
+    delete intent.reservedTokenId;
+    await saveIntent(intent);
+    return { status: "refund_pending", idempotencyKey, reason: "sold_out" };
+  }
+
+  const mintTxRef = `uct-mint:${collectionBase.id}:${reservedTokenId}:${nanoid(10)}`;
   const mintedAt = new Date().toISOString();
 
   const token: StoredToken = {
-    collectionId: collection.id,
-    collectionName: collection.name,
-    slug: collection.slug,
-    coverUrl: collection.coverUrl,
-    tokenId,
+    collectionId: collectionBase.id,
+    collectionName: collectionBase.name,
+    slug: collectionBase.slug,
+    coverUrl: collectionBase.coverUrl,
+    tokenId: reservedTokenId,
     ownerPrincipal: walletPrincipal,
     mintTxRef,
     paymentRef,
@@ -686,31 +952,39 @@ export async function submitMint(params: {
     idempotencyKey,
   };
 
-  await markPayment(paymentRef, idempotencyKey);
+  try {
+    await markPayment(paymentRef, idempotencyKey);
+  } catch (err) {
+    if (err instanceof MintHttpError && err.code === "UPAD_PAYMENT_USED") throw err;
+    throw err;
+  }
+
   try {
     await saveToken(token);
   } catch {
-    // Rare race on token path — retry next id once
-    const retryId = tokenId + 1;
-    if (retryId > collection.totalSupply) {
-      throw new MintHttpError("Sold out", 409, "UPAD_SOLD_OUT");
-    }
-    token.tokenId = retryId;
-    token.mintTxRef = `uct-mint:${collection.id}:${retryId}:${nanoid(10)}`;
-    await saveToken(token);
+    // Slot race on token write — release and refund rather than oversell.
+    await releaseReservation(intent.collectionId, reservedTokenId, idempotencyKey);
+    intent.status = "refund_pending";
+    intent.reason = "sold_out";
+    intent.paymentRef = paymentRef;
+    delete intent.reservedTokenId;
+    await saveIntent(intent);
+    return { status: "refund_pending", idempotencyKey, reason: "sold_out" };
   }
 
   intent.status = "confirmed";
   intent.paymentRef = paymentRef;
   intent.tokenId = token.tokenId;
+  intent.reservedTokenId = reservedTokenId;
   intent.mintTxRef = token.mintTxRef;
   await saveIntent(intent);
+  await releaseReservation(intent.collectionId, reservedTokenId, idempotencyKey);
 
   try {
     await recordMintSale({
-      creatorPrincipal: collection.creatorPrincipal,
-      collectionId: collection.id,
-      collectionName: collection.name,
+      creatorPrincipal: collectionBase.creatorPrincipal,
+      collectionId: collectionBase.id,
+      collectionName: collectionBase.name,
       saleId: intent.idempotencyKey,
       grossUct: intent.priceUct,
       buyerPrincipal: walletPrincipal,

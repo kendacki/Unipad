@@ -305,6 +305,23 @@ export default function DropDetailPage() {
             ownerPrincipal: principal,
           });
         }
+      } else if (mintResult.status === "refund_pending") {
+        setStage("ready");
+        toast.info(
+          "Refund pending",
+          mintResult.reason === "mint_cap"
+            ? "You already hit the mint limit. Your payment is cancelled for an automatic refund."
+            : "This drop sold out before your mint finished. Your payment is cancelled for an automatic refund.",
+        );
+      } else if (mintResult.status === "rejected") {
+        setStage("ready");
+        toast.error(
+          new Error(
+            mintResult.reason === "sold_out"
+              ? "Sold out — no mint was issued."
+              : mintResult.reason || "Mint failed",
+          ),
+        );
       } else {
         setStage("ready");
         toast.error(new Error(mintResult.reason || "Mint failed"));
