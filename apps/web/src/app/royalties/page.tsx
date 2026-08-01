@@ -118,7 +118,7 @@ export default function RoyaltiesPage() {
             <p>Sales from your drops.</p>
           </div>
           <m.div
-            className="earnings-hero-balance panel glass"
+            className="earnings-hero-balance"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={springSnappy}

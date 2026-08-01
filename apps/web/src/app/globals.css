@@ -1665,6 +1665,15 @@ h3,
   gap: 0.4rem;
   padding: 1.4rem 1.45rem;
   border-radius: 12px;
+  background: var(--black);
+  color: var(--white);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 28px rgba(10, 10, 10, 0.18);
+}
+
+.earnings-hero-balance .earnings-kpi-label,
+.earnings-hero-balance .earnings-kpi-hint {
+  color: rgba(255, 255, 255, 0.62);
 }
 
 .earnings-hero-value {
@@ -1672,14 +1681,14 @@ h3,
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1.05;
-  color: var(--black);
+  color: var(--white);
 }
 
 .earnings-hero-value span {
   font-size: 0.42em;
   font-weight: 600;
   letter-spacing: 0;
-  color: var(--ink-soft);
+  color: rgba(255, 255, 255, 0.55);
   margin-left: 0.2rem;
 }
 
