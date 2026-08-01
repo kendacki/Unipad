@@ -383,23 +383,33 @@ export async function publishListing(principal: string, idOrSlug: string): Promi
     throw new ListingHttpError("Only drafts can be published", 400, "UPAD_VALIDATION");
   }
 
-  const launchAt = listing.launchAt ?? new Date().toISOString();
+  const nowIso = new Date().toISOString();
   const now = Date.now();
-  const status: CollectionStatus =
-    Date.parse(launchAt) > now ? "scheduled" : "live";
+  const rawLaunch = listing.launchAt;
+  const launchMs = rawLaunch ? Date.parse(rawLaunch) : NaN;
+  const scheduled = Number.isFinite(launchMs) && launchMs > now;
+  const launchAt = scheduled ? (rawLaunch as string) : nowIso;
+  const status: CollectionStatus = scheduled ? "scheduled" : "live";
 
   const phases = listing.phases.map((p) => ({
     ...p,
-    startsAt: p.startsAt ?? launchAt,
+    // Align phase windows with the published open time so storefront price/phase match catalog drops.
+    startsAt: launchAt,
+    endsAt: p.endsAt ?? null,
   }));
 
   const next: StoredListing = {
     ...listing,
+    name: listing.name.trim(),
+    description: listing.description?.trim() || "",
+    creatorDisplayName: listing.creatorDisplayName?.trim() || creatorDisplayName(listing.creatorPrincipal),
+    coverUrl: listing.coverUrl?.trim() || null,
     launchAt,
     status,
     phases,
     activePhase: pickActivePhase(phases),
-    updatedAt: new Date().toISOString(),
+    remainingSupply: Math.max(0, listing.totalSupply - listing.mintedCount),
+    updatedAt: nowIso,
   };
   await saveListing(next);
   return toPublic(next);

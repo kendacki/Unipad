@@ -63,7 +63,7 @@ export function cleanDropDescription(
   return text;
 }
 
-/** Live mintable first, then upcoming, then sold out / ended */
+/** Live mintable first, then upcoming (soonest), then sold out / ended */
 export function sortForStorefront(collections: Collection[]): Collection[] {
   const rank = (c: Collection) => {
     if (isMintable(c)) return 0;
@@ -77,6 +77,10 @@ export function sortForStorefront(collections: Collection[]): Collection[] {
     if (d !== 0) return d;
     const aTime = a.launchAt ?? a.createdAt;
     const bTime = b.launchAt ?? b.createdAt;
+    // Upcoming: soonest open first. Live / rest: newest first.
+    if (a.status === "scheduled" && b.status === "scheduled") {
+      return aTime.localeCompare(bTime);
+    }
     return bTime.localeCompare(aTime);
   });
 }

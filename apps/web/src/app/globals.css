@@ -1206,10 +1206,21 @@ h3,
   color: var(--white);
 }
 
+.drop-badge.status-scheduled {
+  background: rgba(10, 10, 10, 0.82);
+  color: var(--white);
+}
+
 .drop-badge.status-sold_out,
 .drop-badge.status-ended {
   background: rgba(10, 10, 10, 0.75);
   color: var(--white);
+}
+
+.drop-tile-wrap.is-highlight .drop-tile {
+  outline: 2px solid var(--orange);
+  outline-offset: 3px;
+  box-shadow: 0 14px 36px rgba(255, 106, 0, 0.16);
 }
 
 .drop-meta {

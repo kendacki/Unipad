@@ -3,11 +3,18 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import type { Collection } from "@unipad/shared";
 import { api } from "@/lib/api";
 import { DROP_COVER_FALLBACKS } from "@/lib/media";
-import { dropPriceLabel, isMintable, sortForStorefront, statusLabel } from "@/lib/drops";
+import {
+  dropPriceLabel,
+  isMintable,
+  sortForStorefront,
+  statusLabel,
+  type DropFilter,
+} from "@/lib/drops";
 import { DropGrid } from "@/components/DropGrid";
 import { fadeUp, springSnappy } from "@/lib/motion";
 
@@ -24,7 +31,18 @@ function coverFor(c: Collection, index: number) {
   return landscapeCover(c.coverUrl || DROP_COVER_FALLBACKS[index % DROP_COVER_FALLBACKS.length]);
 }
 
+function viewToFilter(view: string | null): DropFilter {
+  if (view === "upcoming") return "upcoming";
+  if (view === "all") return "all";
+  return "mintable";
+}
+
 export function DropsListing() {
+  const searchParams = useSearchParams();
+  const view = searchParams.get("view");
+  const highlight = searchParams.get("highlight")?.trim().toLowerCase() || "";
+  const defaultFilter = viewToFilter(view);
+
   const [collections, setCollections] = useState<Collection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
@@ -43,7 +61,7 @@ export function DropsListing() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [view, highlight]);
 
   const featured = useMemo(() => {
     if (!collections?.length) return [];
@@ -57,6 +75,16 @@ export function DropsListing() {
   useEffect(() => {
     setActive(0);
   }, [featuredIds]);
+
+  useEffect(() => {
+    if (!highlight || !collections?.length) return;
+    const el = document.getElementById(`drop-${highlight}`);
+    if (!el) return;
+    const id = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => window.clearTimeout(id);
+  }, [highlight, collections, defaultFilter]);
 
   const goTo = useCallback(
     (index: number) => {
@@ -118,6 +146,7 @@ export function DropsListing() {
                         priority={i === 0}
                         sizes="(max-width: 860px) 100vw, 640px"
                         style={{ objectFit: "cover", objectPosition: "center" }}
+                        unoptimized={!coverFor(drop, i).includes("images.unsplash.com")}
                       />
                     </div>
 
@@ -211,11 +240,13 @@ export function DropsListing() {
 
       <AnimatePresence mode="wait">
         <DropGrid
+          key={defaultFilter}
           filterable
-          defaultFilter="mintable"
+          defaultFilter={defaultFilter}
           excludeIds={featuredIds}
           collections={collections}
           error={error}
+          highlightSlug={highlight || undefined}
         />
       </AnimatePresence>
     </m.div>

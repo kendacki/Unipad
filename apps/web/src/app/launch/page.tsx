@@ -269,12 +269,14 @@ export default function LaunchPage() {
     setSubmitting(true);
     try {
       const published = await api.publishCollection(t, createdId);
+      const slug = published.slug || createdSlug;
       if (published.status === "scheduled") {
         toast.success("Scheduled", `Minting opens ${formatLaunchAt(published.launchAt || previewLaunchAt!)}.`);
+        router.push(`/drops?view=upcoming&highlight=${encodeURIComponent(slug || "")}`);
       } else {
         toast.success("It’s live!", "Your drop is open for minting.");
+        router.push(`/drops?view=live&highlight=${encodeURIComponent(slug || "")}`);
       }
-      router.push(`/drops/${createdSlug}`);
     } catch (e) {
       toast.error(e);
     } finally {

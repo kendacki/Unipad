@@ -25,6 +25,7 @@ type Props = {
   excludeIds?: string[];
   collections?: Collection[] | null;
   error?: string | null;
+  highlightSlug?: string;
 };
 
 export function DropGrid({
@@ -35,10 +36,15 @@ export function DropGrid({
   excludeIds,
   collections: collectionsProp,
   error: errorProp,
+  highlightSlug,
 }: Props) {
   const [collectionsLocal, setCollectionsLocal] = useState<Collection[] | null>(null);
   const [errorLocal, setErrorLocal] = useState<string | null>(null);
   const [filter, setFilter] = useState<DropFilter>(defaultFilter);
+
+  useEffect(() => {
+    setFilter(defaultFilter);
+  }, [defaultFilter]);
 
   const controlled = collectionsProp !== undefined;
   const collections = controlled ? collectionsProp : collectionsLocal;
@@ -175,8 +181,18 @@ export function DropGrid({
                 Math.round((c.mintedCount / Math.max(1, c.totalSupply)) * 100),
               );
               const mintable = isMintable(c);
+              const highlighted =
+                Boolean(highlightSlug) &&
+                (c.slug.toLowerCase() === highlightSlug || c.id.toLowerCase() === highlightSlug);
               return (
-                <m.div key={c.id} variants={cardItem} whileHover={{ y: -6 }} transition={springSnappy}>
+                <m.div
+                  key={c.id}
+                  id={`drop-${c.slug.toLowerCase()}`}
+                  variants={cardItem}
+                  whileHover={{ y: -6 }}
+                  transition={springSnappy}
+                  className={highlighted ? "drop-tile-wrap is-highlight" : "drop-tile-wrap"}
+                >
                   <Link href={`/drops/${c.slug}`} className="drop-tile">
                     <div className="drop-media">
                       <Image
@@ -185,6 +201,7 @@ export function DropGrid({
                         fill
                         sizes="(max-width: 640px) 100vw, (max-width: 1100px) 50vw, 360px"
                         loading={i < 3 ? "eager" : "lazy"}
+                        unoptimized={!cover.includes("images.unsplash.com")}
                       />
                       <span className={`drop-badge status-${c.status}`}>
                         {statusLabel(c.status)}
