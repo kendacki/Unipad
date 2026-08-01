@@ -139,7 +139,10 @@ export default function RoyaltiesPage() {
               <span> UCT</span>
             </strong>
             <span className="earnings-stat-meta">
-              {summary?.saleCount ?? 0} sale{(summary?.saleCount ?? 0) === 1 ? "" : "s"}
+              <span className="earnings-count-box" aria-label={`${summary?.saleCount ?? 0} sales`}>
+                {summary?.saleCount ?? 0}
+              </span>{" "}
+              sale{(summary?.saleCount ?? 0) === 1 ? "" : "s"}
             </span>
           </div>
           <div className="earnings-stat">
@@ -159,7 +162,12 @@ export default function RoyaltiesPage() {
         >
           <div className="earnings-panel-head">
             <h3>Sales</h3>
-            <span className="muted">{entries.length}</span>
+            <span
+              className="earnings-count-box"
+              aria-label={`${entries.length} sales`}
+            >
+              {entries.length}
+            </span>
           </div>
 
           {!entries.length ? (

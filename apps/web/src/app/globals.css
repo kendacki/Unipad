@@ -1881,11 +1881,31 @@ h3,
 }
 
 .earnings-stat-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.75rem;
   color: var(--ink-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.earnings-count-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  padding: 0 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--ink) 28%, transparent);
+  border-radius: 0.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  flex-shrink: 0;
 }
 
 .earnings-activity {
