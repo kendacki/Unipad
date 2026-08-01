@@ -156,39 +156,64 @@ export default function RoyaltiesPage() {
       return;
     }
 
-    const tagged = to.startsWith("@") ? to : `@${to}`;
-    const ok = await toast.confirm({
-      title: "Send payout?",
-      message: `Send ${formatUct(amountUct)} UCT to ${tagged} from Balance.`,
-      confirmLabel: "Send",
-      cancelLabel: "Cancel",
-    });
-    if (!ok) return;
-
-    setPaying(true);
+    // Refresh Balance before opening Sphere so we don't start a payment we can't record.
     try {
-      // Cap is earnings Balance only — then send real UCT via Sphere to the recipient.
       const latest = await api.royalties(token);
+      setSummary({ ...emptySummary(), ...latest.summary });
+      setEntries(latest.entries);
       const liveAvailable = BigInt(latest.summary.accruedUct || "0");
       if (requested > liveAvailable) {
-        setSummary({ ...emptySummary(), ...latest.summary });
-        setEntries(latest.entries);
         setAmountDisplay(formatUct(liveAvailable.toString()));
         toast.error("Earnings balance changed. Amount was capped to what’s available from sales.");
         return;
       }
+    } catch (e) {
+      toast.error(e);
+      return;
+    }
 
-      await ensureSphereForPayment();
-      prepareSpherePaymentWindow();
-      const paymentRef = await payUct({
-        recipient: to,
-        amount: amountUct,
-        memo: `unipad-earnings-payout:${amountUct}`,
+    const tagged = to.startsWith("@") ? to : `@${to}`;
+    setPaying(true);
+    let paymentRef: string | null = null;
+    try {
+      // Same pattern as mint: open/reconnect Sphere inside the confirm click gesture.
+      paymentRef = await toast.confirmAndRun({
+        title: "Send payout?",
+        message: `Send ${formatUct(amountUct)} UCT to ${tagged} from Balance. Keep the Sphere wallet window open until you approve.`,
+        confirmLabel: "Pay with Sphere",
+        cancelLabel: "Cancel",
+        run: () => {
+          try {
+            prepareSpherePaymentWindow();
+          } catch {
+            /* ensureSphereForPayment will surface a clear error */
+          }
+          toast.info(
+            "Approve UCT in Sphere",
+            "Confirm the send in the Sphere wallet window (or extension). Keep it open.",
+          );
+          return (async () => {
+            await ensureSphereForPayment();
+            return payUct({
+              recipient: to,
+              amount: amountUct,
+              memo: `unipad-earnings-payout:${amountUct}`,
+            });
+          })();
+        },
       });
-      if (!paymentRef?.trim()) {
-        throw new Error("Sphere did not return a payment reference. Try again.");
-      }
+    } catch (e) {
+      toast.error(e);
+      setPaying(false);
+      return;
+    }
 
+    if (!paymentRef?.trim()) {
+      setPaying(false);
+      return;
+    }
+
+    try {
       const result = await api.payoutRoyalties(token, {
         amountUct,
         recipient: to,
@@ -198,10 +223,7 @@ export default function RoyaltiesPage() {
       setEntries(result.entries);
       setAmountDisplay("");
       setRecipient("");
-      toast.success(
-        "Sent",
-        `${formatUct(result.paidUct)} UCT delivered to ${tagged}.`,
-      );
+      toast.success("Sent", `${formatUct(result.paidUct)} UCT delivered to ${tagged}.`);
     } catch (e) {
       toast.error(e);
       void refresh();
@@ -356,7 +378,7 @@ export default function RoyaltiesPage() {
                 ? "Sending…"
                 : !sphereReady
                   ? "Connect Sphere to send"
-                  : "Send with Sphere"}
+                  : "Send payout"}
             </m.button>
           </div>
         </m.div>
