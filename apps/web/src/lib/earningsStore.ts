@@ -294,7 +294,7 @@ export async function applyCreatorPayout(
   }
   if (amount > accrued) {
     throw new EarningsHttpError(
-      `Amount exceeds your earnings balance (${accrued.toString()} base units from sales). Sphere wallet balance cannot be used here.`,
+      `Amount exceeds your earnings balance of ${formatUct(accrued.toString())} UCT from sales. Sphere wallet balance cannot be used here.`,
       400,
       "UPAD_VALIDATION",
     );
