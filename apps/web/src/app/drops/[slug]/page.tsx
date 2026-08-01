@@ -538,12 +538,14 @@ export default function DropDetailPage() {
         </m.button>
 
         {collection.status === "draft" ? (
-          <p className="hint">
-            Draft preview — publish from Create a drop when you’re ready.{" "}
-            <Link href="/launch" className="text-link">
-              Back to publish
+          <div className="draft-publish-banner" style={{ marginTop: "0.75rem" }}>
+            <p className="hint" style={{ marginBottom: "0.5rem" }}>
+              This is a draft preview. Close this tab when you’re done, or continue below to publish.
+            </p>
+            <Link href="/launch" className="btn btn-signal" style={{ display: "inline-flex" }}>
+              Continue to publish
             </Link>
-          </p>
+          </div>
         ) : null}
 
         {collection.status === "scheduled" && collection.launchAt ? (

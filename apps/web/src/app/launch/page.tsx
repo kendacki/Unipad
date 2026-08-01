@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import { parseUct, type PhaseType } from "@unipad/shared";
@@ -41,6 +41,53 @@ type MintLimit = (typeof MINT_LIMIT_OPTIONS)[number]["value"];
 
 /** Stored for API compatibility; secondary market UI is deferred. */
 const DEFAULT_ROYALTY_BPS = 500;
+
+const LAUNCH_CHECKPOINT_KEY = "unipad.launch.checkpoint";
+
+type LaunchCheckpoint = {
+  step: Step;
+  createdId: string;
+  createdSlug: string;
+  name: string;
+  slug: string;
+  ownerName: string;
+  description: string;
+  totalSupply: number;
+  mintLimit: MintLimit;
+  phases: PhaseDraft[];
+  allowlistText: string;
+  launchMode: LaunchMode;
+  schedulePreset: SchedulePreset;
+  customDate: string;
+  customHour: number;
+  customMinute: number;
+};
+
+function saveLaunchCheckpoint(data: LaunchCheckpoint) {
+  try {
+    sessionStorage.setItem(LAUNCH_CHECKPOINT_KEY, JSON.stringify(data));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadLaunchCheckpoint(): LaunchCheckpoint | null {
+  try {
+    const raw = sessionStorage.getItem(LAUNCH_CHECKPOINT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as LaunchCheckpoint;
+  } catch {
+    return null;
+  }
+}
+
+function clearLaunchCheckpoint() {
+  try {
+    sessionStorage.removeItem(LAUNCH_CHECKPOINT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function mintLimitLabel(limit: number) {
   return MINT_LIMIT_OPTIONS.find((o) => o.value === limit)?.label ?? `${limit} per wallet`;
@@ -107,6 +154,48 @@ export default function LaunchPage() {
   const tz = useMemo(() => timezoneHint(), []);
   const activePhases = useMemo(() => phases.filter((p) => p.enabled), [phases]);
   const hasAllowlist = activePhases.some((p) => p.type === "allowlist");
+
+  useEffect(() => {
+    const checkpoint = loadLaunchCheckpoint();
+    if (!checkpoint?.createdId || !checkpoint.createdSlug) return;
+    setStep(4);
+    setCreatedId(checkpoint.createdId);
+    setCreatedSlug(checkpoint.createdSlug);
+    setName(checkpoint.name);
+    setSlug(checkpoint.slug);
+    setOwnerName(checkpoint.ownerName);
+    setDescription(checkpoint.description);
+    setTotalSupply(checkpoint.totalSupply);
+    setMintLimit(checkpoint.mintLimit);
+    setPhases(checkpoint.phases);
+    setAllowlistText(checkpoint.allowlistText);
+    setLaunchMode(checkpoint.launchMode);
+    setSchedulePreset(checkpoint.schedulePreset);
+    setCustomDate(checkpoint.customDate);
+    setCustomHour(checkpoint.customHour);
+    setCustomMinute(checkpoint.customMinute);
+  }, []);
+
+  function checkpointPayload(id: string, dropSlug: string): LaunchCheckpoint {
+    return {
+      step: 4,
+      createdId: id,
+      createdSlug: dropSlug,
+      name,
+      slug: dropSlug,
+      ownerName,
+      description,
+      totalSupply,
+      mintLimit,
+      phases,
+      allowlistText,
+      launchMode,
+      schedulePreset,
+      customDate,
+      customHour,
+      customMinute,
+    };
+  }
 
   function applyMintLimit(limit: MintLimit) {
     setMintLimit(limit);
@@ -229,6 +318,7 @@ export default function LaunchPage() {
       });
       setCreatedId(created.id);
       setCreatedSlug(created.slug);
+      saveLaunchCheckpoint(checkpointPayload(created.id, created.slug));
       const alPhase = created.phases.find((p) => p.type === "allowlist");
 
       if (alPhase && allowlistText.trim()) {
@@ -242,7 +332,7 @@ export default function LaunchPage() {
         }
       }
 
-      toast.success("Drop saved", "Review once more, then publish when you’re ready.");
+      toast.success("Drop saved", "Preview if you want, then publish when you’re ready.");
       setStep(4);
     } catch (e) {
       toast.error(e);
@@ -269,6 +359,7 @@ export default function LaunchPage() {
     setSubmitting(true);
     try {
       const published = await api.publishCollection(t, createdId);
+      clearLaunchCheckpoint();
       const slug = published.slug || createdSlug;
       if (published.status === "scheduled") {
         toast.success("Scheduled", `Minting opens ${formatLaunchAt(published.launchAt || previewLaunchAt!)}.`);
@@ -707,6 +798,11 @@ export default function LaunchPage() {
                     ? `Lists as Upcoming until ${formatLaunchAt(previewLaunchAt)}.`
                     : "Minting opens as soon as you publish."}
                 </p>
+                {createdSlug ? (
+                  <p className="hint" style={{ margin: 0 }}>
+                    Preview opens in a new tab — this page stays here so you can publish when ready.
+                  </p>
+                ) : null}
               </div>
               <div className="launch-actions">
                 <button
@@ -727,7 +823,16 @@ export default function LaunchPage() {
                   <button
                     type="button"
                     className="btn btn-ghost"
-                    onClick={() => router.push(`/drops/${createdSlug}`)}
+                    onClick={() => {
+                      if (createdId && createdSlug) {
+                        saveLaunchCheckpoint(checkpointPayload(createdId, createdSlug));
+                      }
+                      window.open(
+                        `/drops/${createdSlug}?from=launch`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
                   >
                     Preview draft
                   </button>
