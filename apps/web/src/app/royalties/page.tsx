@@ -70,8 +70,8 @@ export default function RoyaltiesPage() {
     return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
   }, [summary]);
 
-  const display = (value?: string) =>
-    loading && !summary ? "…" : `${formatUct(value ?? "0")} UCT`;
+  const amount = (value?: string) =>
+    loading && !summary ? "…" : formatUct(value ?? "0");
 
   if (!token) {
     return (
@@ -109,69 +109,63 @@ export default function RoyaltiesPage() {
       className="section earnings-page"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: 0.35 }}
     >
       <div className="shell earnings-shell">
-        <m.header className="earnings-hero" variants={fadeUp} initial="hidden" animate="show">
-          <div className="earnings-hero-copy">
+        <m.div className="earnings-top" variants={fadeUp} initial="hidden" animate="show">
+          <div className="earnings-title">
             <h2>Earnings</h2>
-            <p>Sales from your drops.</p>
+            <p>Sales from your drops</p>
           </div>
-          <m.div
-            className="earnings-hero-balance"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={springSnappy}
-          >
-            <span className="earnings-kpi-label">Balance</span>
-            <strong className="earnings-hero-value">
-              {loading && !summary ? "…" : formatUct(summary?.accruedUct ?? "0")}
+        </m.div>
+
+        <m.div
+          className="earnings-stats"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={springSnappy}
+        >
+          <div className="earnings-stat earnings-stat-balance">
+            <span className="earnings-stat-label">Balance</span>
+            <strong className="earnings-stat-value">
+              {amount(summary?.accruedUct)}
               <span> UCT</span>
             </strong>
-            <span className="earnings-kpi-hint">Lifetime {formatUct(netTotal)} UCT</span>
-          </m.div>
-        </m.header>
-
-        <div className="earnings-kpis">
-          <m.div
-            className="earnings-kpi panel glass"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={springSnappy}
-          >
-            <span className="earnings-kpi-label">Gross sales</span>
-            <strong className="earnings-kpi-value">{display(summary?.grossSalesUct)}</strong>
-            <span className="earnings-kpi-hint">
+            <span className="earnings-stat-meta">Lifetime {formatUct(netTotal)}</span>
+          </div>
+          <div className="earnings-stat">
+            <span className="earnings-stat-label">Gross</span>
+            <strong className="earnings-stat-value">
+              {amount(summary?.grossSalesUct)}
+              <span> UCT</span>
+            </strong>
+            <span className="earnings-stat-meta">
               {summary?.saleCount ?? 0} mint{(summary?.saleCount ?? 0) === 1 ? "" : "s"}
             </span>
-          </m.div>
-          <m.div
-            className="earnings-kpi panel glass"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springSnappy, delay: 0.05 }}
-          >
-            <span className="earnings-kpi-label">Fees</span>
-            <strong className="earnings-kpi-value">{display(summary?.platformFeesUct)}</strong>
-            <span className="earnings-kpi-hint">Taken from sales</span>
-          </m.div>
-          <m.div
-            className="earnings-kpi panel glass"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springSnappy, delay: 0.1 }}
-          >
-            <span className="earnings-kpi-label">Paid out</span>
-            <strong className="earnings-kpi-value">{display(summary?.paidUct)}</strong>
-            <span className="earnings-kpi-hint">To your wallet</span>
-          </m.div>
-        </div>
+          </div>
+          <div className="earnings-stat">
+            <span className="earnings-stat-label">Fees</span>
+            <strong className="earnings-stat-value">
+              {amount(summary?.platformFeesUct)}
+              <span> UCT</span>
+            </strong>
+            <span className="earnings-stat-meta">From sales</span>
+          </div>
+          <div className="earnings-stat">
+            <span className="earnings-stat-label">Paid out</span>
+            <strong className="earnings-stat-value">
+              {amount(summary?.paidUct)}
+              <span> UCT</span>
+            </strong>
+            <span className="earnings-stat-meta">To wallet</span>
+          </div>
+        </m.div>
 
         <m.div
           className="earnings-activity panel glass"
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ ...springSnappy, delay: 0.12 }}
+          transition={{ ...springSnappy, delay: 0.06 }}
         >
           <div className="earnings-panel-head">
             <h3>Activity</h3>
