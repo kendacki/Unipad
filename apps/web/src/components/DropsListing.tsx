@@ -16,6 +16,7 @@ import {
   type DropFilter,
 } from "@/lib/drops";
 import { takePublishedDropStash } from "@/lib/launchCheckpoint";
+import { isTrendingCatalogDrop } from "@/lib/catalog";
 import { DropGrid } from "@/components/DropGrid";
 import { fadeUp, springSnappy } from "@/lib/motion";
 
@@ -77,11 +78,13 @@ export function DropsListing() {
 
   const featured = useMemo(() => {
     if (!collections?.length) return [];
-    const mintable = collections.filter((c) => isMintable(c));
-    const pool = mintable.length >= FEATURED_COUNT ? mintable : collections;
-    return pool.slice(0, FEATURED_COUNT);
+    // Seller publishes stay in All drops — only curated catalog entries are trending.
+    return collections
+      .filter((c) => isTrendingCatalogDrop(c))
+      .slice(0, FEATURED_COUNT);
   }, [collections]);
 
+  // Do not hide seller drops from the grid; only keep carousel slides out of All drops.
   const featuredIds = useMemo(() => featured.map((c) => c.id), [featured]);
 
   useEffect(() => {

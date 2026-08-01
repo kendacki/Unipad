@@ -13,6 +13,8 @@ type SeedDrop = {
   priceUct: string;
   supply: number;
   coverUrl: string;
+  /** Curated for the drops-page trending carousel only. */
+  trending?: boolean;
 };
 
 /** Production storefront catalog when the Hono API / Postgres is not reachable. */
@@ -26,6 +28,7 @@ const SEED: SeedDrop[] = [
     priceUct: "1",
     supply: 100,
     coverUrl: cover("1699524826369-57870e627c43"),
+    trending: true,
   },
   {
     slug: "orbit-pulse",
@@ -36,6 +39,7 @@ const SEED: SeedDrop[] = [
     priceUct: "12",
     supply: 64,
     coverUrl: cover("1636622433525-127afdf3662d"),
+    trending: true,
   },
   {
     slug: "north-flare",
@@ -46,6 +50,7 @@ const SEED: SeedDrop[] = [
     priceUct: "8",
     supply: 88,
     coverUrl: cover("1638803040283-7a5ffd48dad5"),
+    trending: true,
   },
   {
     slug: "amber-relay",
@@ -152,6 +157,18 @@ function toCollection(def: SeedDrop, index: number): Collection {
 }
 
 const CATALOG = SEED.map(toCollection);
+
+const TRENDING_IDS = new Set(
+  SEED.filter((s) => s.trending).map((s) => `col-${s.slug}`),
+);
+const TRENDING_SLUGS = new Set(
+  SEED.filter((s) => s.trending).map((s) => s.slug.toLowerCase()),
+);
+
+/** Only curated catalog drops belong in the trending cover carousel. */
+export function isTrendingCatalogDrop(c: Pick<Collection, "id" | "slug">): boolean {
+  return TRENDING_IDS.has(c.id) || TRENDING_SLUGS.has(c.slug.toLowerCase());
+}
 
 export function listCatalogCollections(status?: string | null): Collection[] {
   if (!status || status === "all") return CATALOG;
