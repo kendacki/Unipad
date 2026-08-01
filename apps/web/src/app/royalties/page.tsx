@@ -151,7 +151,7 @@ export default function RoyaltiesPage() {
     const tagged = to.startsWith("@") ? to : `@${to}`;
     const ok = await toast.confirm({
       title: "Send payout?",
-      message: `Send ${formatUct(amountUct)} UCT to ${tagged} from Balance. Earned stays the same; this moves to Paid out.`,
+      message: `Send ${formatUct(amountUct)} UCT to ${tagged} from Balance.`,
       confirmLabel: "Send",
       cancelLabel: "Cancel",
     });
