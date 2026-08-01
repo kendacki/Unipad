@@ -5,6 +5,7 @@ import { m } from "framer-motion";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
   formatUct,
+  normalizeSphereRecipient,
   parseUct,
   type RoyaltyEntry,
   type RoyaltySummary,
@@ -30,6 +31,17 @@ function statusLabel(status: string) {
   return status;
 }
 
+function asSphereNametag(raw: string | null | undefined): string | null {
+  const t = raw?.trim();
+  if (!t || t.startsWith("0x") || t.includes("…") || t.includes("...")) return null;
+  if (/^[0-9a-f]{64,66}$/i.test(t)) return null;
+  try {
+    return normalizeSphereRecipient(t);
+  } catch {
+    return t.startsWith("@") ? t : `@${t}`;
+  }
+}
+
 /** Cap a typed display amount to the earnings balance (never wallet). */
 function clampToEarningsBalance(raw: string, balanceBase: string): string {
   const cleaned = raw.trim();
@@ -49,6 +61,7 @@ export default function RoyaltiesPage() {
   const toast = useToast();
   const {
     token,
+    displayName,
     connectSphere,
     connecting,
     sphereReady,
@@ -173,6 +186,10 @@ export default function RoyaltiesPage() {
     }
 
     const tagged = to.startsWith("@") ? to : `@${to}`;
+    const senderTag = asSphereNametag(displayName);
+    const payoutMemo = senderTag
+      ? `From ${senderTag}`
+      : "From Unipad seller";
     setPaying(true);
     let paymentRef: string | null = null;
     try {
@@ -197,7 +214,7 @@ export default function RoyaltiesPage() {
             return payUct({
               recipient: to,
               amount: amountUct,
-              memo: `unipad-earnings-payout:${amountUct}`,
+              memo: payoutMemo,
             });
           })();
         },
@@ -218,6 +235,7 @@ export default function RoyaltiesPage() {
         amountUct,
         recipient: to,
         paymentRef,
+        senderNametag: senderTag,
       });
       setSummary({ ...emptySummary(), ...result.summary });
       setEntries(result.entries);
@@ -406,43 +424,51 @@ export default function RoyaltiesPage() {
               <table className="earnings-table">
                 <thead>
                   <tr>
-                    <th>Drop</th>
-                    <th>Price</th>
-                    <th>Earned</th>
+                    <th>Details</th>
+                    <th>Amount</th>
+                    <th>Net</th>
                     <th>Status</th>
                     <th>When</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((e) => (
-                    <tr key={e.id}>
-                      <td>
-                        <strong>{e.collectionName}</strong>
-                        {e.payoutStatus === "paid" && e.payoutRecipient ? (
-                          <div className="earnings-paid-to">to {e.payoutRecipient}</div>
-                        ) : null}
-                      </td>
-                      <td className="muted">{formatUct(e.grossUct)} UCT</td>
-                      <td>
-                        <strong>{formatUct(e.creatorNetUct)} UCT</strong>
-                      </td>
-                      <td>
-                        <span
-                          className={`earnings-status ${
-                            e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
-                          }`}
-                        >
-                          {statusLabel(e.payoutStatus)}
-                        </span>
-                      </td>
-                      <td className="muted">
-                        {new Date(e.paidAt || e.createdAt).toLocaleString(undefined, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })}
-                      </td>
-                    </tr>
-                  ))}
+                  {entries.map((e) => {
+                    const isPayout = e.payoutStatus === "paid" && Boolean(e.payoutRecipient);
+                    const senderLabel = e.payoutSender || asSphereNametag(displayName);
+                    return (
+                      <tr key={e.id}>
+                        <td>
+                          {isPayout ? (
+                            <>
+                              <strong>{senderLabel || "You"}</strong>
+                              <div className="earnings-paid-to">to {e.payoutRecipient}</div>
+                            </>
+                          ) : (
+                            <strong>{e.collectionName}</strong>
+                          )}
+                        </td>
+                        <td className="muted">{formatUct(e.grossUct)} UCT</td>
+                        <td>
+                          <strong>{formatUct(e.creatorNetUct)} UCT</strong>
+                        </td>
+                        <td>
+                          <span
+                            className={`earnings-status ${
+                              e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
+                            }`}
+                          >
+                            {statusLabel(e.payoutStatus)}
+                          </span>
+                        </td>
+                        <td className="muted">
+                          {new Date(e.paidAt || e.createdAt).toLocaleString(undefined, {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          })}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

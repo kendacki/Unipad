@@ -13,6 +13,7 @@ export async function POST(request: Request) {
       amountUct?: string;
       recipient?: string;
       paymentRef?: string | null;
+      senderNametag?: string | null;
     };
 
     const amountUct = String(body.amountUct ?? "").trim();
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
       amountUct,
       recipient,
       paymentRef,
+      senderNametag: body.senderNametag ?? null,
     });
 
     return NextResponse.json(result, {

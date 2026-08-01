@@ -114,7 +114,12 @@ export const api = {
     ),
   payoutRoyalties: (
     token: string,
-    body: { amountUct: string; recipient: string; paymentRef?: string | null },
+    body: {
+      amountUct: string;
+      recipient: string;
+      paymentRef?: string | null;
+      senderNametag?: string | null;
+    },
   ) =>
     request<{
       summary: RoyaltySummary;

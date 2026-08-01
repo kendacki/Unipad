@@ -133,6 +133,8 @@ export interface RoyaltyEntry {
   paidAt?: string | null;
   /** @nametag or principal the seller paid. */
   payoutRecipient?: string | null;
+  /** Seller Sphere @nametag shown on the payout (not the drop name). */
+  payoutSender?: string | null;
 }
 
 /** Default primary-mint platform fee: 2.5% (250 bps). */

@@ -231,13 +231,14 @@ export async function getCreatorEarnings(principal: string): Promise<{
     createdAt: s.createdAt,
     paidAt: s.paidAt ?? null,
     payoutRecipient: s.payoutRecipient ?? null,
+    payoutSender: s.payoutSender ?? null,
   }));
 
   return { summary, entries };
 }
 
 /**
- * Pay out accrued sale credits only (earnings ledger — not Sphere wallet balance).
+ * Mark accrued sale credits paid after a successful Sphere UCT send to the recipient.
  * Caps amount to accrued UCT from sales; supports partial payout via FIFO split.
  */
 export async function applyCreatorPayout(
@@ -246,6 +247,8 @@ export async function applyCreatorPayout(
     amountUct: string;
     recipient: string;
     paymentRef?: string | null;
+    /** Seller Sphere @nametag for transaction description (not the drop name). */
+    senderNametag?: string | null;
   },
 ): Promise<{ summary: RoyaltySummary; entries: RoyaltyEntry[]; paidUct: string }> {
   const key = normalizeOwnerKey(principal);
@@ -280,6 +283,16 @@ export async function applyCreatorPayout(
   }
   if (normalizeOwnerKey(recipient) === key) {
     throw new EarningsHttpError("Send to a different user", 400, "UPAD_VALIDATION");
+  }
+
+  let payoutSender: string | null = null;
+  if (input.senderNametag?.trim()) {
+    try {
+      payoutSender = normalizeSphereRecipient(input.senderNametag);
+    } catch {
+      const raw = input.senderNametag.trim();
+      payoutSender = raw.startsWith("@") ? raw : `@${raw}`;
+    }
   }
 
   const { summary: before } = await getCreatorEarnings(principal);
@@ -361,6 +374,7 @@ export async function applyCreatorPayout(
         payoutStatus: "paid",
         paidAt: now,
         payoutRecipient: recipient,
+        payoutSender,
         payoutRef: paymentRef,
       };
       await saveSale(next);
@@ -388,6 +402,7 @@ export async function applyCreatorPayout(
       payoutStatus: "paid",
       paidAt: now,
       payoutRecipient: recipient,
+      payoutSender,
       payoutRef: paymentRef,
       createdAt: sale.createdAt,
     };
@@ -399,6 +414,7 @@ export async function applyCreatorPayout(
       payoutStatus: "accrued",
       paidAt: null,
       payoutRecipient: null,
+      payoutSender: null,
       payoutRef: null,
     };
     await saveSale(paidRow);
