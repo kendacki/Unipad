@@ -5,7 +5,11 @@ import type {
   MintResult,
   PhaseType,
 } from "@unipad/shared";
-import { UCT_COIN_ID } from "@unipad/shared";
+import {
+  UCT_COIN_ID,
+  splitMintProceeds,
+  summarizeRoyaltyLedger,
+} from "@unipad/shared";
 import { env } from "../env.js";
 import { pool, query } from "../db/pool.js";
 import {
@@ -342,43 +346,25 @@ export async function getCreatorRoyalties(principal: string) {
      FROM royalty_ledger r
      JOIN collections c ON c.id = r.collection_id
      WHERE r.creator_principal = $1
-     ORDER BY r.created_at DESC
-     LIMIT 200`,
+     ORDER BY r.created_at DESC`,
     [principal],
   );
 
-  let accrued = 0n;
-  let paid = 0n;
-  let gross = 0n;
-  let fees = 0n;
-  for (const r of rows) {
-    const net = BigInt(r.creator_net_uct);
-    gross += BigInt(r.gross_uct);
-    fees += BigInt(r.platform_fee_uct);
-    if (r.payout_status === "paid") paid += net;
-    else accrued += net;
-  }
+  const mapped = rows.map((r) => ({
+    id: r.id,
+    saleId: r.sale_id,
+    collectionId: r.collection_id,
+    collectionName: r.collection_name,
+    grossUct: r.gross_uct,
+    platformFeeUct: r.platform_fee_uct,
+    creatorNetUct: r.creator_net_uct,
+    payoutStatus: r.payout_status,
+    createdAt: r.created_at.toISOString(),
+  }));
 
   return {
-    summary: {
-      accruedUct: accrued.toString(),
-      paidUct: paid.toString(),
-      platformFeeBps: env.platformFeeBps,
-      grossSalesUct: gross.toString(),
-      platformFeesUct: fees.toString(),
-      saleCount: rows.length,
-    },
-    entries: rows.map((r) => ({
-      id: r.id,
-      saleId: r.sale_id,
-      collectionId: r.collection_id,
-      collectionName: r.collection_name,
-      grossUct: r.gross_uct,
-      platformFeeUct: r.platform_fee_uct,
-      creatorNetUct: r.creator_net_uct,
-      payoutStatus: r.payout_status,
-      createdAt: r.created_at.toISOString(),
-    })),
+    summary: summarizeRoyaltyLedger(mapped, env.platformFeeBps),
+    entries: mapped.slice(0, 200),
   };
 }
 
@@ -557,9 +543,7 @@ async function settleMintLocked(params: {
     );
 
     const saleId = ledgerRows[0].id;
-    const gross = BigInt(intentRow.price_uct);
-    const platformFee = (gross * BigInt(env.platformFeeBps)) / 10000n;
-    const creatorNet = gross - platformFee;
+    const split = splitMintProceeds(intentRow.price_uct, env.platformFeeBps);
 
     await client.query(
       `INSERT INTO royalty_ledger (
@@ -571,9 +555,9 @@ async function settleMintLocked(params: {
         saleId,
         collectionId,
         col.creator_principal,
-        gross.toString(),
-        platformFee.toString(),
-        creatorNet.toString(),
+        split.grossUct,
+        split.platformFeeUct,
+        split.creatorNetUct,
       ],
     );
 

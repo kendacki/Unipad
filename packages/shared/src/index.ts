@@ -114,7 +114,7 @@ export interface RoyaltySummary {
   platformFeeBps: number;
   /** Sum of mint sale prices (before fee). */
   grossSalesUct: string;
-  /** Sum of platform fees taken (e.g. 2.5% → @cryptzarr). */
+  /** Sum of platform fees taken from primary mints. */
   platformFeesUct: string;
   saleCount: number;
 }
@@ -129,6 +129,69 @@ export interface RoyaltyEntry {
   creatorNetUct: string;
   payoutStatus: string;
   createdAt: string;
+}
+
+/** Default primary-mint platform fee: 2.5% (250 bps). */
+export const DEFAULT_PLATFORM_FEE_BPS = 250;
+
+export function normalizePlatformFeeBps(raw?: number | string | null): number {
+  const n = Number(raw ?? DEFAULT_PLATFORM_FEE_BPS);
+  if (!Number.isFinite(n) || n < 0 || n > 10_000) return DEFAULT_PLATFORM_FEE_BPS;
+  return Math.floor(n);
+}
+
+/** Split a mint sale: platform fee first, remainder credited to the seller. */
+export function splitMintProceeds(
+  grossUct: string,
+  feeBps: number = DEFAULT_PLATFORM_FEE_BPS,
+): {
+  grossUct: string;
+  platformFeeUct: string;
+  creatorNetUct: string;
+  feeBps: number;
+} {
+  const gross = BigInt(grossUct || "0");
+  if (gross < 0n) throw new Error("Invalid gross");
+  const bps = normalizePlatformFeeBps(feeBps);
+  const platformFeeUct = (gross * BigInt(bps)) / 10000n;
+  const creatorNetUct = gross - platformFeeUct;
+  return {
+    grossUct: gross.toString(),
+    platformFeeUct: platformFeeUct.toString(),
+    creatorNetUct: creatorNetUct.toString(),
+    feeBps: bps,
+  };
+}
+
+/** Aggregate royalty ledger rows into the dashboard summary (single source of truth). */
+export function summarizeRoyaltyLedger(
+  entries: Array<{
+    grossUct: string;
+    platformFeeUct: string;
+    creatorNetUct: string;
+    payoutStatus: string;
+  }>,
+  feeBps: number = DEFAULT_PLATFORM_FEE_BPS,
+): RoyaltySummary {
+  let accrued = 0n;
+  let paid = 0n;
+  let gross = 0n;
+  let fees = 0n;
+  for (const e of entries) {
+    const net = BigInt(e.creatorNetUct || "0");
+    gross += BigInt(e.grossUct || "0");
+    fees += BigInt(e.platformFeeUct || "0");
+    if (e.payoutStatus === "paid") paid += net;
+    else accrued += net;
+  }
+  return {
+    accruedUct: accrued.toString(),
+    paidUct: paid.toString(),
+    platformFeeBps: normalizePlatformFeeBps(feeBps),
+    grossSalesUct: gross.toString(),
+    platformFeesUct: fees.toString(),
+    saleCount: entries.length,
+  };
 }
 
 export interface AllowlistEntry {

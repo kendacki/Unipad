@@ -1,7 +1,11 @@
 import "dotenv/config";
 import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
-import { DEFAULT_TREASURY_PRINCIPAL, normalizeSphereRecipient } from "@unipad/shared";
+import {
+  DEFAULT_TREASURY_PRINCIPAL,
+  normalizePlatformFeeBps,
+  normalizeSphereRecipient,
+} from "@unipad/shared";
 
 // Prefer repo-root .env when running from apps/api
 loadEnv({ path: resolve(process.cwd(), "../../.env") });
@@ -19,7 +23,7 @@ export const env = {
   treasuryPrincipal: normalizeSphereRecipient(
     process.env.TREASURY_PRINCIPAL ?? DEFAULT_TREASURY_PRINCIPAL,
   ),
-  platformFeeBps: Number(process.env.PLATFORM_FEE_BPS ?? 250),
+  platformFeeBps: normalizePlatformFeeBps(process.env.PLATFORM_FEE_BPS),
   mintConcurrency: Number(process.env.MINT_CONCURRENCY ?? 8),
   creatorRateLimitStrict: process.env.CREATOR_RATE_LIMIT_STRICT !== "false",
   creatorRateLimitPerMin: Number(process.env.CREATOR_RATE_LIMIT_PER_MIN ?? 30),

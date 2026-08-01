@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { m } from "framer-motion";
 import {
+  DEFAULT_PLATFORM_FEE_BPS,
   formatUct,
   parseUct,
+  splitMintProceeds,
   type RoyaltyEntry,
   type RoyaltySummary,
 } from "@unipad/shared";
@@ -16,7 +18,7 @@ import { fadeUp, springSnappy } from "@/lib/motion";
 const emptySummary = (): RoyaltySummary => ({
   accruedUct: "0",
   paidUct: "0",
-  platformFeeBps: 250,
+  platformFeeBps: DEFAULT_PLATFORM_FEE_BPS,
   grossSalesUct: "0",
   platformFeesUct: "0",
   saleCount: 0,
@@ -65,16 +67,14 @@ export default function RoyaltiesPage() {
     };
   }, [token, toast]);
 
-  const feePct = summary ? summary.platformFeeBps / 100 : 2.5;
+  const feePct = (summary?.platformFeeBps ?? DEFAULT_PLATFORM_FEE_BPS) / 100;
   const example = useMemo(() => {
-    const bps = summary?.platformFeeBps ?? 250;
-    const gross = parseUct("7");
-    const fee = (BigInt(gross) * BigInt(bps)) / 10000n;
-    const net = BigInt(gross) - fee;
+    const bps = summary?.platformFeeBps ?? DEFAULT_PLATFORM_FEE_BPS;
+    const split = splitMintProceeds(parseUct("7"), bps);
     return {
-      gross: formatUct(gross),
-      fee: formatUct(fee.toString()),
-      net: formatUct(net.toString()),
+      gross: formatUct(split.grossUct),
+      fee: formatUct(split.platformFeeUct),
+      net: formatUct(split.creatorNetUct),
       youPct: 100 - bps / 100,
     };
   }, [summary?.platformFeeBps]);
@@ -83,6 +83,9 @@ export default function RoyaltiesPage() {
     if (!summary) return "0";
     return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
   }, [summary]);
+
+  const display = (value?: string) =>
+    loading && !summary ? "…" : `${formatUct(value ?? "0")} UCT`;
 
   if (!token) {
     return (
@@ -158,7 +161,7 @@ export default function RoyaltiesPage() {
           >
             <span className="earnings-kpi-label">Gross sales</span>
             <strong className="earnings-kpi-value">
-              {loading && !summary ? "…" : `${formatUct(summary?.grossSalesUct ?? "0")} UCT`}
+              {display(summary?.grossSalesUct)}
             </strong>
             <span className="earnings-kpi-hint">
               {summary?.saleCount ?? 0} mint{(summary?.saleCount ?? 0) === 1 ? "" : "s"}
@@ -172,7 +175,7 @@ export default function RoyaltiesPage() {
           >
             <span className="earnings-kpi-label">Platform fees</span>
             <strong className="earnings-kpi-value">
-              {loading && !summary ? "…" : `${formatUct(summary?.platformFeesUct ?? "0")} UCT`}
+              {display(summary?.platformFeesUct)}
             </strong>
             <span className="earnings-kpi-hint">{feePct}% of each mint</span>
           </m.div>
@@ -184,7 +187,7 @@ export default function RoyaltiesPage() {
           >
             <span className="earnings-kpi-label">Paid out</span>
             <strong className="earnings-kpi-value">
-              {loading && !summary ? "…" : `${formatUct(summary?.paidUct ?? "0")} UCT`}
+              {display(summary?.paidUct)}
             </strong>
             <span className="earnings-kpi-hint">Sent to your wallet</span>
           </m.div>

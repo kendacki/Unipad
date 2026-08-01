@@ -547,6 +547,22 @@ export async function submitMint(params: {
     throw new MintHttpError("Intent belongs to another wallet", 403, "UPAD_FORBIDDEN");
   }
   if (intent.status === "confirmed" && intent.tokenId != null) {
+    try {
+      const collection = await getResolvedCollection(intent.collectionId);
+      if (collection) {
+        await recordMintSale({
+          creatorPrincipal: collection.creatorPrincipal,
+          collectionId: collection.id,
+          collectionName: collection.name,
+          saleId: intent.idempotencyKey,
+          grossUct: intent.priceUct,
+          buyerPrincipal: walletPrincipal,
+          tokenId: intent.tokenId,
+        });
+      }
+    } catch {
+      // Earnings heal is best-effort; mint is already confirmed.
+    }
     return {
       status: "confirmed",
       idempotencyKey,
