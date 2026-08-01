@@ -25,5 +25,7 @@ export async function GET(request: Request, ctx: Ctx) {
   if (!col) {
     return NextResponse.json({ error: "Not found", code: "UPAD_NOT_FOUND" }, { status: 404 });
   }
-  return NextResponse.json(await withLiveSupply(col));
+  return NextResponse.json(await withLiveSupply(col), {
+    headers: { "Cache-Control": "no-store, max-age=0" },
+  });
 }

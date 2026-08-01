@@ -28,7 +28,9 @@ export async function POST(request: Request, ctx: Ctx) {
     const session = await requireAuth(request.headers.get("Authorization"));
     const { id } = await ctx.params;
     const published = await publishListing(session.principal, id);
-    return NextResponse.json(published);
+    return NextResponse.json(published, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   } catch (err) {
     return handleErr(err);
   }

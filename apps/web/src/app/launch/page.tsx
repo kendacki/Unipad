@@ -6,6 +6,13 @@ import { AnimatePresence, m } from "framer-motion";
 import { parseUct, type PhaseType } from "@unipad/shared";
 import { api } from "@/lib/api";
 import {
+  clearLaunchCheckpoint,
+  loadLaunchCheckpoint,
+  saveLaunchCheckpoint,
+  stashPublishedDrop,
+  type LaunchCheckpoint,
+} from "@/lib/launchCheckpoint";
+import {
   SCHEDULE_HOURS,
   SCHEDULE_MINUTES,
   SCHEDULE_PRESETS,
@@ -41,53 +48,6 @@ type MintLimit = (typeof MINT_LIMIT_OPTIONS)[number]["value"];
 
 /** Stored for API compatibility; secondary market UI is deferred. */
 const DEFAULT_ROYALTY_BPS = 500;
-
-const LAUNCH_CHECKPOINT_KEY = "unipad.launch.checkpoint";
-
-type LaunchCheckpoint = {
-  step: Step;
-  createdId: string;
-  createdSlug: string;
-  name: string;
-  slug: string;
-  ownerName: string;
-  description: string;
-  totalSupply: number;
-  mintLimit: MintLimit;
-  phases: PhaseDraft[];
-  allowlistText: string;
-  launchMode: LaunchMode;
-  schedulePreset: SchedulePreset;
-  customDate: string;
-  customHour: number;
-  customMinute: number;
-};
-
-function saveLaunchCheckpoint(data: LaunchCheckpoint) {
-  try {
-    sessionStorage.setItem(LAUNCH_CHECKPOINT_KEY, JSON.stringify(data));
-  } catch {
-    /* ignore */
-  }
-}
-
-function loadLaunchCheckpoint(): LaunchCheckpoint | null {
-  try {
-    const raw = sessionStorage.getItem(LAUNCH_CHECKPOINT_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as LaunchCheckpoint;
-  } catch {
-    return null;
-  }
-}
-
-function clearLaunchCheckpoint() {
-  try {
-    sessionStorage.removeItem(LAUNCH_CHECKPOINT_KEY);
-  } catch {
-    /* ignore */
-  }
-}
 
 function mintLimitLabel(limit: number) {
   return MINT_LIMIT_OPTIONS.find((o) => o.value === limit)?.label ?? `${limit} per wallet`;
@@ -156,6 +116,12 @@ export default function LaunchPage() {
   const hasAllowlist = activePhases.some((p) => p.type === "allowlist");
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("fresh") === "1") {
+      clearLaunchCheckpoint();
+      router.replace("/launch", { scroll: false });
+      return;
+    }
     const checkpoint = loadLaunchCheckpoint();
     if (!checkpoint?.createdId || !checkpoint.createdSlug) return;
     setStep(4);
@@ -166,15 +132,17 @@ export default function LaunchPage() {
     setOwnerName(checkpoint.ownerName);
     setDescription(checkpoint.description);
     setTotalSupply(checkpoint.totalSupply);
-    setMintLimit(checkpoint.mintLimit);
-    setPhases(checkpoint.phases);
+    setMintLimit(
+      (MINT_LIMIT_OPTIONS.find((o) => o.value === checkpoint.mintLimit)?.value ?? 2) as MintLimit,
+    );
+    setPhases(checkpoint.phases as PhaseDraft[]);
     setAllowlistText(checkpoint.allowlistText);
-    setLaunchMode(checkpoint.launchMode);
-    setSchedulePreset(checkpoint.schedulePreset);
+    setLaunchMode((checkpoint.launchMode as LaunchMode) || "now");
+    setSchedulePreset((checkpoint.schedulePreset as SchedulePreset) || "tomorrow_10");
     setCustomDate(checkpoint.customDate);
     setCustomHour(checkpoint.customHour);
     setCustomMinute(checkpoint.customMinute);
-  }, []);
+  }, [router]);
 
   function checkpointPayload(id: string, dropSlug: string): LaunchCheckpoint {
     return {
@@ -360,14 +328,19 @@ export default function LaunchPage() {
     try {
       const published = await api.publishCollection(t, createdId);
       clearLaunchCheckpoint();
+      stashPublishedDrop(published);
       const slug = published.slug || createdSlug;
+      const bust = Date.now();
       if (published.status === "scheduled") {
         toast.success("Scheduled", `Minting opens ${formatLaunchAt(published.launchAt || previewLaunchAt!)}.`);
-        router.push(`/drops?view=upcoming&highlight=${encodeURIComponent(slug || "")}`);
+        router.push(
+          `/drops?view=upcoming&highlight=${encodeURIComponent(slug || "")}&_=${bust}`,
+        );
       } else {
         toast.success("It’s live!", "Your drop is open for minting.");
-        router.push(`/drops?view=live&highlight=${encodeURIComponent(slug || "")}`);
+        router.push(`/drops?view=live&highlight=${encodeURIComponent(slug || "")}&_=${bust}`);
       }
+      router.refresh();
     } catch (e) {
       toast.error(e);
     } finally {

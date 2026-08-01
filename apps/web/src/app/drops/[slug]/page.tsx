@@ -14,6 +14,7 @@ import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { rememberMint } from "@/lib/mintCache";
+import { clearLaunchCheckpoint } from "@/lib/launchCheckpoint";
 import { DROP_DETAIL_FALLBACKS } from "@/lib/media";
 import { fadeUp, scaleIn, springSnappy } from "@/lib/motion";
 
@@ -538,14 +539,16 @@ export default function DropDetailPage() {
         </m.button>
 
         {collection.status === "draft" ? (
-          <div className="draft-publish-banner" style={{ marginTop: "0.75rem" }}>
-            <p className="hint" style={{ marginBottom: "0.5rem" }}>
-              This is a draft preview. Close this tab when you’re done, or continue below to publish.
-            </p>
-            <Link href="/launch" className="btn btn-signal" style={{ display: "inline-flex" }}>
-              Continue to publish
+          <p className="hint" style={{ marginTop: "0.75rem" }}>
+            Draft preview — close this tab when you’re done.{" "}
+            <Link
+              href="/launch?fresh=1"
+              className="text-link"
+              onClick={() => clearLaunchCheckpoint()}
+            >
+              Start over
             </Link>
-          </div>
+          </p>
         ) : null}
 
         {collection.status === "scheduled" && collection.launchAt ? (

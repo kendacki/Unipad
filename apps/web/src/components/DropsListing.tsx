@@ -15,6 +15,7 @@ import {
   statusLabel,
   type DropFilter,
 } from "@/lib/drops";
+import { takePublishedDropStash } from "@/lib/launchCheckpoint";
 import { DropGrid } from "@/components/DropGrid";
 import { fadeUp, springSnappy } from "@/lib/motion";
 
@@ -41,6 +42,7 @@ export function DropsListing() {
   const searchParams = useSearchParams();
   const view = searchParams.get("view");
   const highlight = searchParams.get("highlight")?.trim().toLowerCase() || "";
+  const bust = searchParams.get("_") || "";
   const defaultFilter = viewToFilter(view);
 
   const [collections, setCollections] = useState<Collection[] | null>(null);
@@ -50,10 +52,20 @@ export function DropsListing() {
 
   useEffect(() => {
     let cancelled = false;
+    const stashed = takePublishedDropStash();
+
+    if (stashed) {
+      setCollections(sortForStorefront([stashed]));
+    }
+
     api
       .listCollections()
       .then((r) => {
-        if (!cancelled) setCollections(sortForStorefront(r.collections));
+        if (cancelled) return;
+        const byId = new Map(r.collections.map((c) => [c.id, c]));
+        // Overlay the just-published drop so Live/Upcoming updates without a hard refresh.
+        if (stashed) byId.set(stashed.id, stashed);
+        setCollections(sortForStorefront([...byId.values()]));
       })
       .catch((e) => {
         if (!cancelled) setError(e.message);
@@ -61,7 +73,7 @@ export function DropsListing() {
     return () => {
       cancelled = true;
     };
-  }, [view, highlight]);
+  }, [view, highlight, bust]);
 
   const featured = useMemo(() => {
     if (!collections?.length) return [];

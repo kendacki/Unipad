@@ -96,7 +96,12 @@ async function getJson<T>(pathname: string): Promise<T | null> {
   });
   const hit = blobs.find((b) => b.pathname === pathname);
   if (!hit) return null;
-  const res = await fetch(hit.url, { cache: "no-store" });
+  // Bust CDN cache so publish → list reads the latest draft/live JSON.
+  const url = `${hit.url}${hit.url.includes("?") ? "&" : "?"}_=${Date.now()}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+  });
   if (!res.ok) return null;
   return (await res.json()) as T;
 }
@@ -113,7 +118,11 @@ async function listJsonUnder<T>(prefix: string): Promise<T[]> {
     });
     for (const blob of page.blobs) {
       if (!blob.pathname.endsWith(".json")) continue;
-      const res = await fetch(blob.url, { cache: "no-store" });
+      const url = `${blob.url}${blob.url.includes("?") ? "&" : "?"}_=${Date.now()}`;
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
       if (!res.ok) continue;
       out.push((await res.json()) as T);
     }
@@ -181,10 +190,9 @@ function toPublic(listing: StoredListing): Collection {
 }
 
 async function saveListing(listing: StoredListing) {
-  if (!useBlob()) {
-    memory().byId.set(listing.id, listing);
-    return;
-  }
+  // Always mirror in-process so publish → list on the same instance is instant.
+  memory().byId.set(listing.id, listing);
+  if (!useBlob()) return;
   await putJson(collectionPath(listing.id), listing);
   await putJson(slugPath(listing.slug), { id: listing.id });
   await putJson(creatorIndexPath(listing.creatorPrincipal, listing.id), {
@@ -194,13 +202,26 @@ async function saveListing(listing: StoredListing) {
 
 async function loadListingById(id: string): Promise<StoredListing | null> {
   if (!useBlob()) return memory().byId.get(id) ?? null;
-  return getJson<StoredListing>(collectionPath(id));
+  const fromBlob = await getJson<StoredListing>(collectionPath(id));
+  if (fromBlob) {
+    memory().byId.set(fromBlob.id, fromBlob);
+    return fromBlob;
+  }
+  return memory().byId.get(id) ?? null;
 }
 
 async function loadAllListings(): Promise<StoredListing[]> {
   if (!useBlob()) return [...memory().byId.values()];
   const rows = await listJsonUnder<StoredListing>("listings/collections/");
-  return rows.filter((r) => r && typeof r.id === "string" && Array.isArray(r.phases));
+  const byId = new Map<string, StoredListing>();
+  for (const r of rows) {
+    if (r && typeof r.id === "string" && Array.isArray(r.phases)) byId.set(r.id, r);
+  }
+  // Prefer in-process writes (e.g. just-published) over potentially stale Blob CDN reads.
+  for (const [id, listing] of memory().byId) {
+    byId.set(id, listing);
+  }
+  return [...byId.values()];
 }
 
 function validateCreateInput(input: CreateCollectionInput) {

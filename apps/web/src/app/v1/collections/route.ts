@@ -10,5 +10,12 @@ export async function GET(request: Request) {
   const collections = await Promise.all(
     (await listPublicCollections(status)).map((c) => withLiveSupply(c)),
   );
-  return NextResponse.json({ collections });
+  return NextResponse.json(
+    { collections },
+    {
+      headers: {
+        "Cache-Control": "no-store, max-age=0",
+      },
+    },
+  );
 }
