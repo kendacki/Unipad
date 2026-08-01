@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { m } from "framer-motion";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
@@ -23,8 +23,8 @@ const emptySummary = (): RoyaltySummary => ({
 });
 
 function statusLabel(status: string) {
-  if (status === "paid") return "Paid out";
-  if (status === "accrued") return "In balance";
+  if (status === "paid") return "Paid";
+  if (status === "accrued") return "Credited";
   return status;
 }
 
@@ -64,6 +64,11 @@ export default function RoyaltiesPage() {
       cancelled = true;
     };
   }, [token, toast]);
+
+  const earnedTotal = useMemo(() => {
+    if (!summary) return "0";
+    return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
+  }, [summary]);
 
   const amount = (value?: string) =>
     loading && !summary ? "…" : formatUct(value ?? "0");
@@ -110,7 +115,7 @@ export default function RoyaltiesPage() {
         <m.div className="earnings-top" variants={fadeUp} initial="hidden" animate="show">
           <div className="earnings-title">
             <h2>Earnings</h2>
-            <p>Sales from your drops</p>
+            <p>From mints on your drops</p>
           </div>
         </m.div>
 
@@ -128,22 +133,14 @@ export default function RoyaltiesPage() {
             </strong>
           </div>
           <div className="earnings-stat">
-            <span className="earnings-stat-label">Gross</span>
+            <span className="earnings-stat-label">Earned</span>
             <strong className="earnings-stat-value">
-              {amount(summary?.grossSalesUct)}
+              {amount(earnedTotal)}
               <span> UCT</span>
             </strong>
             <span className="earnings-stat-meta">
-              {summary?.saleCount ?? 0} mint{(summary?.saleCount ?? 0) === 1 ? "" : "s"}
+              {summary?.saleCount ?? 0} sale{(summary?.saleCount ?? 0) === 1 ? "" : "s"}
             </span>
-          </div>
-          <div className="earnings-stat">
-            <span className="earnings-stat-label">Fees</span>
-            <strong className="earnings-stat-value">
-              {amount(summary?.platformFeesUct)}
-              <span> UCT</span>
-            </strong>
-            <span className="earnings-stat-meta">From sales</span>
           </div>
           <div className="earnings-stat">
             <span className="earnings-stat-label">Paid out</span>
@@ -151,7 +148,6 @@ export default function RoyaltiesPage() {
               {amount(summary?.paidUct)}
               <span> UCT</span>
             </strong>
-            <span className="earnings-stat-meta">To wallet</span>
           </div>
         </m.div>
 
@@ -162,14 +158,14 @@ export default function RoyaltiesPage() {
           transition={{ ...springSnappy, delay: 0.06 }}
         >
           <div className="earnings-panel-head">
-            <h3>Activity</h3>
+            <h3>Sales</h3>
             <span className="muted">{entries.length}</span>
           </div>
 
           {!entries.length ? (
             <div className="earnings-empty">
               <p>No sales yet</p>
-              <p className="muted">Mints on your drops show up here.</p>
+              <p className="muted">When someone mints your drop, it shows here.</p>
             </div>
           ) : (
             <div className="earnings-table-wrap">
@@ -177,9 +173,8 @@ export default function RoyaltiesPage() {
                 <thead>
                   <tr>
                     <th>Drop</th>
-                    <th>Sale</th>
-                    <th>Fee</th>
-                    <th>You get</th>
+                    <th>Price</th>
+                    <th>Earned</th>
                     <th>Status</th>
                     <th>When</th>
                   </tr>
@@ -190,8 +185,7 @@ export default function RoyaltiesPage() {
                       <td>
                         <strong>{e.collectionName}</strong>
                       </td>
-                      <td>{formatUct(e.grossUct)} UCT</td>
-                      <td className="muted">{formatUct(e.platformFeeUct)} UCT</td>
+                      <td className="muted">{formatUct(e.grossUct)} UCT</td>
                       <td>
                         <strong>{formatUct(e.creatorNetUct)} UCT</strong>
                       </td>

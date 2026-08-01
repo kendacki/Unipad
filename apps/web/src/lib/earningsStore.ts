@@ -130,7 +130,7 @@ async function findSaleBySaleId(saleId: string): Promise<StoredSale | null> {
   return getJson<StoredSale>(salePath(ptr.id));
 }
 
-/** Idempotent: one earnings row per mint intent / saleId. */
+/** Idempotent: one earnings row per mint intent / saleId. Seller net only. */
 export async function recordMintSale(input: {
   creatorPrincipal: string;
   collectionId: string;
@@ -139,7 +139,15 @@ export async function recordMintSale(input: {
   grossUct: string;
   buyerPrincipal: string;
   tokenId: number;
-}): Promise<StoredSale> {
+}): Promise<StoredSale | null> {
+  const creator = normalizeOwnerKey(input.creatorPrincipal);
+  const buyer = normalizeOwnerKey(input.buyerPrincipal);
+
+  // Seed / demo catalog creators are not seller accounts.
+  if (!creator || creator.startsWith("mock_")) return null;
+  // Self-mints are not seller sales.
+  if (creator === buyer) return null;
+
   const existing = await findSaleBySaleId(input.saleId);
   if (existing) return existing;
 
@@ -155,8 +163,8 @@ export async function recordMintSale(input: {
     creatorNetUct: split.creatorNetUct,
     payoutStatus: "accrued",
     createdAt: new Date().toISOString(),
-    creatorPrincipal: normalizeOwnerKey(input.creatorPrincipal),
-    buyerPrincipal: normalizeOwnerKey(input.buyerPrincipal),
+    creatorPrincipal: creator,
+    buyerPrincipal: buyer,
     tokenId: input.tokenId,
   };
   await saveSale(sale);

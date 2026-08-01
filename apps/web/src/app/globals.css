@@ -1621,7 +1621,7 @@ h3,
 
 /* Earnings dashboard */
 .earnings-shell {
-  max-width: 960px;
+  max-width: 920px;
 }
 
 .earnings-gate {
@@ -1653,7 +1653,7 @@ h3,
 
 .earnings-stats {
   display: grid;
-  grid-template-columns: 1.15fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.2fr 1fr 1fr;
   gap: 0;
   margin-bottom: 0.85rem;
   border: 1px solid rgba(10, 10, 10, 0.1);
@@ -1666,6 +1666,7 @@ h3,
 .earnings-stat {
   display: grid;
   gap: 0.2rem;
+  align-content: center;
   padding: 1rem 1.1rem;
   min-width: 0;
   border-left: 1px solid rgba(10, 10, 10, 0.08);
@@ -1688,8 +1689,7 @@ h3,
   color: var(--ink-soft);
 }
 
-.earnings-stat-balance .earnings-stat-label,
-.earnings-stat-balance .earnings-stat-meta {
+.earnings-stat-balance .earnings-stat-label {
   color: rgba(255, 255, 255, 0.58);
 }
 
@@ -1812,9 +1812,9 @@ h3,
   color: var(--ink-soft);
 }
 
-@media (max-width: 800px) {
+@media (max-width: 700px) {
   .earnings-stats {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 
   .earnings-stat,
@@ -1824,22 +1824,7 @@ h3,
   }
 
   .earnings-stat-balance {
-    grid-column: 1 / -1;
     border-top: none;
-  }
-
-  .earnings-stat:nth-child(3) {
-    border-left: 1px solid rgba(10, 10, 10, 0.08);
-  }
-}
-
-@media (max-width: 480px) {
-  .earnings-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .earnings-stat:nth-child(3) {
-    border-left: none;
   }
 }
 

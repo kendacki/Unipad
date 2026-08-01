@@ -27,7 +27,7 @@ const FAQS = [
   },
   {
     q: "Do creators earn royalties?",
-    a: "Yes. Primary mint sales credit your Earnings balance after the platform fee. You also set secondary royalty basis points when creating a drop.",
+    a: "Yes. When someone mints your drop, your share is credited on the Earnings page. You also set secondary royalty basis points when creating a drop.",
   },
 ] as const;
 
