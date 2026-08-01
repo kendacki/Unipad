@@ -5,7 +5,7 @@ import { applyCreatorPayout, EarningsHttpError } from "@/lib/earningsStore";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Record a seller payout after Sphere UCT send succeeds. */
+/** Record an earnings-ledger payout (capped to accrued sales — not Sphere wallet). */
 export async function POST(request: Request) {
   try {
     const session = await requireAuth(request.headers.get("Authorization"));

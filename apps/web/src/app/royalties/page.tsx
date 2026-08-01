@@ -10,7 +10,6 @@ import {
   type RoyaltySummary,
 } from "@unipad/shared";
 import { api } from "@/lib/api";
-import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { fadeUp, springSnappy } from "@/lib/motion";
@@ -30,16 +29,24 @@ function statusLabel(status: string) {
   return status;
 }
 
+/** Cap a typed display amount to the earnings balance (never wallet). */
+function clampToEarningsBalance(raw: string, balanceBase: string): string {
+  const cleaned = raw.trim();
+  if (!cleaned) return "";
+  if (!/^\d*\.?\d*$/.test(cleaned)) return raw;
+  try {
+    const parsed = parseUct(cleaned.endsWith(".") ? cleaned.slice(0, -1) || "0" : cleaned);
+    const max = BigInt(balanceBase || "0");
+    if (BigInt(parsed) > max) return formatUct(max.toString());
+  } catch {
+    /* keep typing mid-edit */
+  }
+  return raw;
+}
+
 export default function RoyaltiesPage() {
   const toast = useToast();
-  const {
-    token,
-    connectSphere,
-    connecting,
-    sphereReady,
-    ensureSphereForPayment,
-    payUct,
-  } = useWallet();
+  const { token, connectSphere, connecting } = useWallet();
   const [summary, setSummary] = useState<RoyaltySummary | null>(null);
   const [entries, setEntries] = useState<RoyaltyEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -80,6 +87,10 @@ export default function RoyaltiesPage() {
   const balanceBase = summary?.accruedUct ?? "0";
   const balanceDisplay = formatUct(balanceBase);
   const hasBalance = BigInt(balanceBase || "0") > 0n;
+  const creditedSales = useMemo(
+    () => entries.filter((e) => e.payoutStatus !== "paid").length,
+    [entries],
+  );
 
   const amount = (value?: string) =>
     loading && !summary ? "…" : formatUct(value ?? "0");
@@ -88,8 +99,33 @@ export default function RoyaltiesPage() {
     setAmountDisplay(balanceDisplay);
   }
 
+  function onAmountChange(value: string) {
+    if (value === "" || /^\d*\.?\d*$/.test(value)) {
+      setAmountDisplay(clampToEarningsBalance(value, balanceBase));
+    }
+  }
+
+  function onAmountBlur() {
+    const cleaned = amountDisplay.trim();
+    if (!cleaned) return;
+    try {
+      const parsed = parseUct(cleaned);
+      const max = BigInt(balanceBase || "0");
+      const next = BigInt(parsed) > max ? max.toString() : parsed;
+      setAmountDisplay(formatUct(next));
+    } catch {
+      setAmountDisplay("");
+      toast.error("Enter a valid UCT amount from your earnings balance");
+    }
+  }
+
   async function sendPayout() {
     if (!token) return;
+    if (!hasBalance || creditedSales <= 0) {
+      toast.error("No earnings balance from sales to send");
+      return;
+    }
+
     const to = recipient.trim();
     if (!to) {
       toast.error("Enter a recipient @nametag");
@@ -103,43 +139,54 @@ export default function RoyaltiesPage() {
       toast.error("Enter a valid UCT amount");
       return;
     }
-    if (BigInt(amountUct) <= 0n) {
+    const requested = BigInt(amountUct);
+    const available = BigInt(balanceBase || "0");
+    if (requested <= 0n) {
       toast.error("Amount must be greater than zero");
       return;
     }
-    if (BigInt(amountUct) > BigInt(balanceBase || "0")) {
-      toast.error("Amount exceeds available balance");
+    if (requested > available) {
+      toast.error(
+        `You can only send up to ${balanceDisplay} UCT from earnings — Sphere wallet balance is not used.`,
+      );
+      setAmountDisplay(balanceDisplay);
       return;
     }
 
+    const tagged = to.startsWith("@") ? to : `@${to}`;
     const ok = await toast.confirm({
-      title: "Send payout?",
-      message: `Send ${formatUct(amountUct)} UCT to ${to.startsWith("@") ? to : `@${to}`} from your earnings balance. This moves the amount into Paid out.`,
-      confirmLabel: "Pay with Sphere",
+      title: "Send from earnings?",
+      message: `Send ${formatUct(amountUct)} UCT to ${tagged} from your sales earnings only (available ${balanceDisplay} UCT). This does not use your Sphere wallet balance. Paid amounts move to Paid out.`,
+      confirmLabel: "Send from earnings",
       cancelLabel: "Cancel",
     });
     if (!ok) return;
 
     setPaying(true);
     try {
-      await ensureSphereForPayment();
-      prepareSpherePaymentWindow();
-      const paymentRef = await payUct({
-        recipient: to,
-        amount: amountUct,
-        memo: `unipad-earnings-payout:${amountUct}`,
-      });
+      // Re-check ledger before submit so wallet balance is never consulted.
+      const latest = await api.royalties(token);
+      const liveAvailable = BigInt(latest.summary.accruedUct || "0");
+      if (requested > liveAvailable) {
+        setSummary({ ...emptySummary(), ...latest.summary });
+        setEntries(latest.entries);
+        setAmountDisplay(formatUct(liveAvailable.toString()));
+        toast.error("Earnings balance changed. Amount was capped to what’s available from sales.");
+        return;
+      }
 
       const result = await api.payoutRoyalties(token, {
         amountUct,
         recipient: to,
-        paymentRef,
       });
       setSummary({ ...emptySummary(), ...result.summary });
       setEntries(result.entries);
       setAmountDisplay("");
       setRecipient("");
-      toast.success("Payout sent", `${formatUct(result.paidUct)} UCT moved to Paid out.`);
+      toast.success(
+        "Payout recorded",
+        `${formatUct(result.paidUct)} UCT sent from earnings · now in Paid out.`,
+      );
     } catch (e) {
       toast.error(e);
       void refresh();
@@ -237,7 +284,10 @@ export default function RoyaltiesPage() {
         >
           <div className="earnings-payout-copy">
             <h3>Send payout</h3>
-            <p>Send available balance to another Sphere user. Completed sends move into Paid out.</p>
+            <p>
+              Send from your sales earnings only — not your Sphere wallet balance. Amounts are
+              capped by Balance and move into Paid out when sent.
+            </p>
           </div>
 
           <div className="earnings-payout-grid">
@@ -256,16 +306,17 @@ export default function RoyaltiesPage() {
             </label>
 
             <label className="earnings-field">
-              <span>Amount</span>
+              <span>Amount (earnings only)</span>
               <div className="earnings-amount-row">
                 <input
                   type="text"
                   className="input"
                   inputMode="decimal"
-                  placeholder={balanceDisplay}
+                  placeholder={hasBalance ? balanceDisplay : "0"}
                   value={amountDisplay}
                   disabled={paying || !hasBalance}
-                  onChange={(e) => setAmountDisplay(e.target.value)}
+                  onChange={(e) => onAmountChange(e.target.value)}
+                  onBlur={onAmountBlur}
                 />
                 <button
                   type="button"
@@ -282,8 +333,8 @@ export default function RoyaltiesPage() {
           <div className="earnings-payout-actions">
             <p className="earnings-payout-hint">
               {hasBalance
-                ? `Available ${balanceDisplay} UCT`
-                : "No balance to send yet — sales credit here when someone mints your drop."}
+                ? `Earnings available ${balanceDisplay} UCT · ${creditedSales} credited sale${creditedSales === 1 ? "" : "s"}`
+                : "No earnings to send yet — only sale credits appear here, not wallet UCT."}
             </p>
             <m.button
               type="button"
@@ -294,11 +345,7 @@ export default function RoyaltiesPage() {
               transition={springSnappy}
               onClick={() => void sendPayout()}
             >
-              {paying
-                ? "Sending…"
-                : !sphereReady
-                  ? "Connect Sphere to pay"
-                  : "Pay with Sphere"}
+              {paying ? "Sending…" : "Send from earnings"}
             </m.button>
           </div>
         </m.div>

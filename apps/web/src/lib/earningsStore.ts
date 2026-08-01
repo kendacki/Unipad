@@ -6,6 +6,7 @@ import { list, put } from "@vercel/blob";
 import { nanoid } from "nanoid";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
+  formatUct,
   normalizePlatformFeeBps,
   normalizeSphereRecipient,
   splitMintProceeds,
@@ -236,8 +237,8 @@ export async function getCreatorEarnings(principal: string): Promise<{
 }
 
 /**
- * Mark accrued sale credits as paid (FIFO) after the seller sends UCT to a recipient.
- * Supports partial payout by splitting the last sale row.
+ * Pay out accrued sale credits only (earnings ledger — not Sphere wallet balance).
+ * Caps amount to accrued UCT from sales; supports partial payout via FIFO split.
  */
 export async function applyCreatorPayout(
   principal: string,
@@ -248,9 +249,18 @@ export async function applyCreatorPayout(
   },
 ): Promise<{ summary: RoyaltySummary; entries: RoyaltyEntry[]; paidUct: string }> {
   const key = normalizeOwnerKey(principal);
+
+  // Amount must be a non-negative integer string of base units (no floats / scientific).
+  if (!/^\d+$/.test(String(input.amountUct || "").trim())) {
+    throw new EarningsHttpError(
+      "Payout amount must be a valid UCT value from your earnings balance",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
   let amount: bigint;
   try {
-    amount = BigInt(input.amountUct || "0");
+    amount = BigInt(String(input.amountUct).trim());
   } catch {
     throw new EarningsHttpError("Invalid payout amount", 400, "UPAD_VALIDATION");
   }
@@ -272,10 +282,22 @@ export async function applyCreatorPayout(
     throw new EarningsHttpError("Send to a different user", 400, "UPAD_VALIDATION");
   }
 
-  const { summary: before, entries: _e } = await getCreatorEarnings(principal);
+  const { summary: before } = await getCreatorEarnings(principal);
   const accrued = BigInt(before.accruedUct || "0");
+
+  if (accrued <= 0n || before.saleCount <= 0) {
+    throw new EarningsHttpError(
+      "No earnings balance available. Payouts use sales credits only — not your Sphere wallet.",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
   if (amount > accrued) {
-    throw new EarningsHttpError("Amount exceeds available balance", 400, "UPAD_VALIDATION");
+    throw new EarningsHttpError(
+      `Amount exceeds your earnings balance (${accrued.toString()} base units from sales). Sphere wallet balance cannot be used here.`,
+      400,
+      "UPAD_VALIDATION",
+    );
   }
 
   const keySafe = encodeURIComponent(key).slice(0, 120);
@@ -297,12 +319,30 @@ export async function applyCreatorPayout(
   }
 
   const accruedSales = dedupeSales(sales)
-    .filter((s) => s.payoutStatus !== "paid")
+    .filter((s) => s.payoutStatus !== "paid" && BigInt(s.creatorNetUct || "0") > 0n)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  if (!accruedSales.length) {
+    throw new EarningsHttpError(
+      "No credited sales left to pay out",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
+
+  const allocatable = accruedSales.reduce((sum, s) => sum + BigInt(s.creatorNetUct || "0"), 0n);
+  if (amount > allocatable) {
+    throw new EarningsHttpError(
+      "Amount exceeds credited sales available to pay out",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
 
   let remaining = amount;
   const now = new Date().toISOString();
-  const paymentRef = input.paymentRef?.trim() || null;
+  const paymentRef =
+    input.paymentRef?.trim() || `earnings-ledger:${nanoid(12)}`;
 
   for (const sale of accruedSales) {
     if (remaining <= 0n) break;
