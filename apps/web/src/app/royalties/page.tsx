@@ -74,6 +74,7 @@ export default function RoyaltiesPage() {
   const [recipient, setRecipient] = useState("");
   const [amountDisplay, setAmountDisplay] = useState("");
   const [paying, setPaying] = useState(false);
+  const [txExpanded, setTxExpanded] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!token) return;
@@ -104,11 +105,21 @@ export default function RoyaltiesPage() {
   const balanceDisplay = formatUct(balanceBase);
   const hasBalance = BigInt(balanceBase || "0") > 0n;
 
-  /** Lifetime sales total — Balance + Paid out; unchanged when sending a payout. */
   const earnedTotal = useMemo(() => {
     if (!summary) return "0";
     return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
   }, [summary]);
+
+  const sortedEntries = useMemo(() => {
+    return [...entries].sort((a, b) => {
+      const aTime = a.paidAt || a.createdAt;
+      const bTime = b.paidAt || b.createdAt;
+      return bTime.localeCompare(aTime);
+    });
+  }, [entries]);
+
+  const visibleEntries = txExpanded ? sortedEntries : sortedEntries.slice(0, 3);
+  const canExpandTx = sortedEntries.length > 3;
 
   const amount = (value?: string) =>
     loading && !summary ? "…" : formatUct(value ?? "0");
@@ -414,64 +425,100 @@ export default function RoyaltiesPage() {
             </span>
           </div>
 
-          {!entries.length ? (
+          {!sortedEntries.length ? (
             <div className="earnings-empty">
               <p>No transactions yet</p>
               <p className="muted">When someone mints your drop, it shows here.</p>
             </div>
           ) : (
-            <div className="earnings-table-wrap">
-              <table className="earnings-table">
-                <thead>
-                  <tr>
-                    <th>Details</th>
-                    <th>Amount</th>
-                    <th>Net</th>
-                    <th>Status</th>
-                    <th>When</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((e) => {
-                    const isPayout = e.payoutStatus === "paid" && Boolean(e.payoutRecipient);
-                    const senderLabel = e.payoutSender || asSphereNametag(displayName);
-                    return (
-                      <tr key={e.id}>
-                        <td>
-                          {isPayout ? (
-                            <>
-                              <strong>{senderLabel || "You"}</strong>
-                              <div className="earnings-paid-to">to {e.payoutRecipient}</div>
-                            </>
-                          ) : (
-                            <strong>{e.collectionName}</strong>
-                          )}
-                        </td>
-                        <td className="muted">{formatUct(e.grossUct)} UCT</td>
-                        <td>
-                          <strong>{formatUct(e.creatorNetUct)} UCT</strong>
-                        </td>
-                        <td>
-                          <span
-                            className={`earnings-status ${
-                              e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
-                            }`}
-                          >
-                            {statusLabel(e.payoutStatus)}
-                          </span>
-                        </td>
-                        <td className="muted">
-                          {new Date(e.paidAt || e.createdAt).toLocaleString(undefined, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div
+                className={`earnings-table-wrap${txExpanded ? " is-expanded" : ""}`}
+              >
+                <table className="earnings-table">
+                  <thead>
+                    <tr>
+                      <th>Details</th>
+                      <th>Amount</th>
+                      <th>Net</th>
+                      <th>Status</th>
+                      <th>When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleEntries.map((e) => {
+                      const isPayout = e.payoutStatus === "paid" && Boolean(e.payoutRecipient);
+                      const senderLabel = e.payoutSender || asSphereNametag(displayName);
+                      return (
+                        <tr key={e.id}>
+                          <td>
+                            {isPayout ? (
+                              <>
+                                <strong>{senderLabel || "You"}</strong>
+                                <div className="earnings-paid-to">to {e.payoutRecipient}</div>
+                              </>
+                            ) : (
+                              <strong>{e.collectionName}</strong>
+                            )}
+                          </td>
+                          <td className="muted">{formatUct(e.grossUct)} UCT</td>
+                          <td>
+                            <strong>{formatUct(e.creatorNetUct)} UCT</strong>
+                          </td>
+                          <td>
+                            <span
+                              className={`earnings-status ${
+                                e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
+                              }`}
+                            >
+                              {statusLabel(e.payoutStatus)}
+                            </span>
+                          </td>
+                          <td className="muted">
+                            {new Date(e.paidAt || e.createdAt).toLocaleString(undefined, {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {canExpandTx ? (
+                <button
+                  type="button"
+                  className={`earnings-tx-expand${txExpanded ? " is-open" : ""}`}
+                  aria-expanded={txExpanded}
+                  aria-label={txExpanded ? "Hide older transactions" : "Show older transactions"}
+                  onClick={() => setTxExpanded((v) => !v)}
+                >
+                  <svg
+                    className="earnings-tx-expand-icon"
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    aria-hidden
+                  >
+                    <path
+                      d="M6 9l6 6 6-6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <span>
+                    {txExpanded
+                      ? "Show less"
+                      : `${sortedEntries.length - 3} older`}
+                  </span>
+                </button>
+              ) : null}
+            </>
           )}
         </m.div>
       </div>

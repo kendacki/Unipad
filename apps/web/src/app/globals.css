@@ -2040,10 +2040,58 @@ h3,
   margin: 0 -0.15rem;
 }
 
+.earnings-table-wrap.is-expanded {
+  max-height: 17.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid rgba(10, 10, 10, 0.06);
+  border-bottom: 1px solid rgba(10, 10, 10, 0.06);
+  scrollbar-width: thin;
+}
+
 .earnings-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.86rem;
+}
+
+.earnings-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--white);
+}
+
+.earnings-tx-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.earnings-tx-expand:hover {
+  color: var(--ink);
+  background: rgba(10, 10, 10, 0.04);
+}
+
+.earnings-tx-expand-icon {
+  display: block;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.earnings-tx-expand.is-open .earnings-tx-expand-icon {
+  transform: rotate(180deg);
 }
 
 .earnings-table th {
