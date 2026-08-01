@@ -1,85 +1,100 @@
-<div style="font-family: 'Times New Roman', Times, serif;">
-
 # Unipad
 
-Unipad is an NFT launchpad built for the **Unicity** network. Creators can publish drops. Buyers can mint NFTs and pay with **UCT** (Unicity Token).
+**NFT launchpad for the Unicity community** — list for free, mint with UCT, keep what you earn.
 
-**Live site:** [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
+**Live:** [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
 
----
-
-## 1. What Unipad Does
-
-Unipad has two main jobs:
-
-1. **Create a drop** — set a name, cover, supply, and price in UCT, then publish.
-2. **Mint an NFT** — connect a Sphere wallet, pay UCT, and receive the NFT.
-
-There are no gas wars. Payment happens first in UCT. Unipad then finishes the mint.
+Unipad is built for creators and collectors on Unicity. There is **no listing fee**. Publish a drop, share it with the community, and collect UCT when people mint.
 
 ---
 
-## 2. Who This Is For
+## Why Unipad
 
-| Role | What they do |
-|------|----------------|
-| Creators | Launch drops, set prices, view earnings |
-| Collectors | Browse live drops and mint with UCT |
-| Developers | Run the app locally or use the live site on [Vercel](https://unipadnfts.vercel.app) |
-
----
-
-## 3. Project Structure
-
-This repository is a monorepo (one project with several packages):
-
-| Folder | Purpose |
-|--------|---------|
-| `apps/web` | Website (Next.js) — storefront, mint page, create flow |
-| `apps/api` | Backend API — auth, minting, queue, royalties |
-| `packages/shared` | Shared types and UCT amount helpers |
+| For the community | What that means |
+|-------------------|-----------------|
+| **No listing fee** | Creating and publishing a drop is free |
+| **Pay once to mint** | Buyers pay UCT first — then Unipad confirms the NFT |
+| **Seller earnings** | Mint proceeds (after a small platform fee) credit your Earnings balance |
+| **Sphere wallet** | Connect, mint, and transfer with the official Unicity wallet |
+| **Live + Upcoming** | Publish now, or schedule a drop for later |
 
 ---
 
-## 4. How Minting Works
+## What you can do
 
-Unipad uses a **pay-then-mint** flow:
+### Creators
+- Create a drop (name, owner, cover, supply, UCT price)
+- Optional early-access (allowlist) guest list
+- Publish **live** or **schedule** for later
+- Preview a draft before you publish
+- Track **Balance**, **Earned**, and **Paid out** on Earnings
 
-1. The buyer opens a drop and starts a mint.
-2. Unipad creates a mint intent (price, treasury address, memo).
-3. The buyer pays UCT through the **Sphere** wallet.
-4. Unipad confirms the payment and mints the NFT.
-5. The NFT appears under **My mints**.
-
----
-
-## 5. Wallet Connection (Sphere)
-
-Unipad connects to the official Sphere wallet:
-
-- Wallet site: [https://sphere.unicity.network](https://sphere.unicity.network)
-- Network: **testnet2**
-- Payment token: **UCT** (18 decimals)
-
-When you click **Connect Sphere**, Unipad opens the Sphere wallet (browser extension or popup). You approve the connection, then you can mint or create drops.
-
-Official references:
-
-- [Sphere SDK](https://github.com/unicity-sphere/sphere-sdk)
-- [Connect guide](https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/CONNECT.md)
-- [Connect example](https://github.com/unicity-sphere/sphere-sdk-connect-example)
+### Collectors
+- Browse **Live** and **Upcoming** drops
+- Connect Sphere and mint with UCT
+- View NFTs in **My mints**
+- Send an NFT to a `@nametag` or chain pubkey
 
 ---
 
-## 6. Run Locally
+## How minting works
+
+1. Open a live drop and tap mint  
+2. Unipad creates a mint intent (price, treasury, memo)  
+3. You approve the UCT payment in **Sphere**  
+4. Unipad settles the mint and credits the seller’s earnings  
+5. The NFT shows under **My mints**
+
+No gas wars — payment first, mint after.
+
+---
+
+## Tech stack
+
+| Layer | Stack |
+|-------|--------|
+| Storefront | [Next.js 15](https://nextjs.org/), React 19, TypeScript |
+| Motion / UI | Framer Motion |
+| Wallet | [Sphere SDK](https://github.com/unicity-sphere/sphere-sdk) (`@unicitylabs/sphere-sdk`) |
+| Auth | JWT sessions (`jose`) after Sphere connect |
+| Production data | [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) (listings, mints, earnings, covers) |
+| Shared types | `packages/shared` (UCT parse/format, fee split helpers) |
+| Optional API | Hono + Postgres + Redis (`apps/api`) for full hosted backend |
+| Monorepo | pnpm workspaces |
+
+**Production note:** The live site ([unipadnfts.vercel.app](https://unipadnfts.vercel.app)) serves the Next.js app with same-origin `/v1/*` routes and Blob persistence. The Hono API + Postgres stack remains available for local/full backend deployments.
+
+---
+
+## Repository layout
+
+| Path | Role |
+|------|------|
+| `apps/web` | Next.js storefront, create flow, mint, earnings, My mints |
+| `apps/api` | Optional Hono API (auth, mint queue, Postgres royalties) |
+| `packages/shared` | Shared types, UCT helpers, platform fee split |
+| `deploy/` | Optional nginx / edge compose profiles |
+
+---
+
+## Sphere & network
+
+- Wallet: [https://sphere.unicity.network](https://sphere.unicity.network)  
+- Network: **testnet2**  
+- Token: **UCT** (18 decimals)  
+- Docs: [CONNECT.md](https://github.com/unicity-sphere/sphere-sdk/blob/main/docs/CONNECT.md)
+
+---
+
+## Run locally
 
 ### Requirements
 
-- Node.js 22 or newer
+- Node.js **22+**
 - [pnpm](https://pnpm.io/)
-- Docker (for Postgres and Redis)
+- Docker (Postgres + Redis, if you use the API)
 
-### Steps
+### Quick start (web + API)
 
 ```bash
 pnpm db:up
@@ -90,129 +105,78 @@ pnpm db:seed
 pnpm dev
 ```
 
-### Local URLs
-
-| Service | Address |
-|---------|---------|
+| Service | URL |
+|---------|-----|
 | Website | http://localhost:3000 |
 | API health | http://localhost:8787/health |
 
-Copy `.env.example` to `.env` and keep secrets out of git. Never commit a real `.env` file.
+Copy `.env.example` → `.env`. Never commit secrets.
 
 ---
 
-## 7. Rate limiting and load balancing
+## Production (Vercel)
 
-Unipad applies **defense in depth**:
+Site: [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
 
-| Layer | What it does |
-|-------|----------------|
-| Application (`apps/api`) | Per-route Redis (or in-memory) buckets: global `/v1/*`, auth, storefront, creators, mint (IP + wallet), media |
-| Edge nginx (`deploy/nginx`) | `least_conn` across API replicas, connection limits, stricter `limit_req` on auth/mint |
-| Web (Vercel) | Platform edge / DDoS protection for the Next.js storefront |
+- **Root Directory:** `apps/web`  
+- Pushes to `main` redeploy automatically  
 
-`/health` is not rate-limited so load balancer probes stay reliable. Rate-limit responses use HTTP **429**, `Retry-After`, and `X-RateLimit-*` headers.
+### Important env vars (web / Vercel)
 
-### Local data plane (Postgres + Redis)
-
-```bash
-pnpm db:up
-```
-
-### Optional edge stack (API + nginx LB on :8080)
-
-```bash
-pnpm edge:up
-# scale API replicas (nginx least_conn + Docker DNS):
-pnpm edge:scale
-```
-
-Point `NEXT_PUBLIC_API_URL` / `PUBLIC_API_URL` at `http://localhost:8080` when using the edge profile.
-
----
-
-## 8. Deploy the Website on Vercel
-
-Production storefront: [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
-
-The GitHub `main` branch is connected to Vercel. Pushes to `main` redeploy automatically. Project settings use **Root Directory** `apps/web` and monorepo install/build from the repo root.
-
-To recreate or update the deployment:
-
-1. Import this repository into Vercel (or use the linked project).
-2. Keep **Root Directory** as `apps/web`.
-3. Add the environment variables below.
-4. Deploy (or push to `main`).
-5. Open [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app) and click **Connect Sphere**. Allow the popup if the browser asks.
-
-### Website environment variables
-
-| Variable | Meaning | Example |
-|----------|---------|---------|
-| `NEXT_PUBLIC_SITE_URL` | Public site URL | `https://unipadnfts.vercel.app` |
-| `NEXT_PUBLIC_API_URL` | API / storefront data origin | `https://unipadnfts.vercel.app` (same-origin `/v1`) |
-| `NEXT_PUBLIC_WS_URL` | WebSocket URL for live updates | `wss://your-api.example.com` |
-| `NEXT_PUBLIC_SPHERE_WALLET_URL` | Sphere wallet URL | `https://sphere.unicity.network` |
-| `NEXT_PUBLIC_UCT_COIN_ID` | Official UCT coin id | See `.env.example` |
-| `NEXT_PUBLIC_NETWORK` | Unicity network name | `testnet2` |
-| `NEXT_PUBLIC_UNIPAD_DEV_MOCK` | Demo wallet (must be off in production) | `false` |
-
-### API environment variables
-
-| Variable | Meaning |
+| Variable | Purpose |
 |----------|---------|
-| `FRONTEND_ORIGIN` | Vercel site URL for CORS (`https://unipadnfts.vercel.app`) |
-| `AUTH_DOMAIN` | Site hostname (`unipadnfts.vercel.app`) |
-| `TREASURY_PRINCIPAL` | Sphere Unicity ID that receives mint payments and platform fees. Official format: `@cryptzarr` (not `cryptzarr@unicity`). |
-| `JWT_SECRET` | Strong secret for login sessions |
-| `UNIPAD_DEV_MOCK` | Set to `false` in production |
-| `REDIS_URL` | Required in production for shared rate-limit buckets across replicas |
-| `GLOBAL_RATE_LIMIT_PER_MIN` | Baseline `/v1/*` IP limit (default 300) |
-| `AUTH_RATE_LIMIT_PER_MIN` | Auth challenge/verify limit (default 20) |
+| `BLOB_READ_WRITE_TOKEN` | Listings, mint ledger, earnings, cover uploads |
+| `JWT_SECRET` | Session tokens |
+| `TREASURY_PRINCIPAL` | UCT mint recipient (e.g. `@cryptzarr`) |
+| `PLATFORM_FEE_BPS` | Mint platform fee in bps (default `250` = 2.5%) |
+| `NEXT_PUBLIC_UCT_COIN_ID` | Canonical UCT coin id (testnet2) |
+| `NEXT_PUBLIC_SPHERE_WALLET_URL` | `https://sphere.unicity.network` |
+| `NEXT_PUBLIC_NETWORK` | `testnet2` |
+| `NEXT_PUBLIC_SITE_URL` | `https://unipadnfts.vercel.app` |
+| `NEXT_PUBLIC_UNIPAD_DEV_MOCK` | Must be `false` in production |
+
+See `.env.example` for the full list (including optional API / Redis settings).
 
 ---
 
-## 9. Main Features
+## Features
 
 | Feature | Status |
 |---------|--------|
-| Browse and filter drops | Done |
-| Create and publish a drop | Done |
-| Sphere wallet connect | Done |
-| Pay with UCT, then mint | Done |
-| Mint queue and live updates | Done |
-| My mints | Done |
-| Creator earnings (royalties) | Done |
-| Local image upload | Done |
-| API rate limits + nginx load balancer | Done |
+| Free listing (no create fee) | Done |
+| Browse Live / Upcoming / All | Done |
+| Create, draft preview, publish / schedule | Done |
+| Cover upload (Blob) or image link | Done |
+| Sphere connect + UCT mint | Done |
+| Seller Earnings dashboard | Done |
+| My mints + NFT transfer | Done |
+| Allowlist (early access) | Done |
+| Optional API rate limits + nginx LB | Done |
 
-### Not included yet
+### Still evolving
 
-- Full on-chain uniqueness oracle
-- Full payment proof verification beyond Sphere Connect transfer ids
-- Large-scale infrastructure (Kubernetes, Kafka, dual IPFS pin)
+- Stronger on-chain uniqueness / payment proofs  
+- Secondary market (royalties UI deferred until then)  
+- Large-scale infra (K8s, Kafka, dual IPFS)
 
 ---
 
-## 10. Useful Commands
+## Commands
 
 | Command | What it does |
 |---------|----------------|
-| `pnpm dev` | Start website and API together |
-| `pnpm db:up` | Start Postgres and Redis |
-| `pnpm edge:up` | Start API + nginx load balancer (profile `edge`) |
-| `pnpm edge:scale` | Run 2 API replicas behind nginx |
-| `pnpm db:migrate` | Create database tables |
-| `pnpm db:seed` | Add sample drop data |
-| `pnpm --filter @unipad/web build` | Build the website for production |
+| `pnpm dev` | Web + API together |
+| `pnpm db:up` | Postgres + Redis |
+| `pnpm db:migrate` / `pnpm db:seed` | Schema + sample data |
+| `pnpm edge:up` / `pnpm edge:scale` | Optional API + nginx LB |
+| `pnpm --filter @unipad/web build` | Production web build |
 
 ---
 
-## 11. License and Contact
+## Community & links
 
-This project is the Unipad MVP codebase for Unicity.
+- **Live app:** [unipadnfts.vercel.app](https://unipadnfts.vercel.app)  
+- **Repo:** [github.com/kendacki/Unipad](https://github.com/kendacki/Unipad)  
+- **Sphere:** [sphere.unicity.network](https://sphere.unicity.network)  
 
-- Live site: [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
-- Repository: [https://github.com/kendacki/Unipad](https://github.com/kendacki/Unipad)
-
-</div>
+Built for Unicity creators and collectors — list free, mint fair, earn on-chain with UCT.
