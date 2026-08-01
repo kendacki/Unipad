@@ -10,6 +10,7 @@ import {
   type RoyaltySummary,
 } from "@unipad/shared";
 import { api } from "@/lib/api";
+import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { fadeUp, springSnappy } from "@/lib/motion";
@@ -46,7 +47,14 @@ function clampToEarningsBalance(raw: string, balanceBase: string): string {
 
 export default function RoyaltiesPage() {
   const toast = useToast();
-  const { token, connectSphere, connecting } = useWallet();
+  const {
+    token,
+    connectSphere,
+    connecting,
+    sphereReady,
+    ensureSphereForPayment,
+    payUct,
+  } = useWallet();
   const [summary, setSummary] = useState<RoyaltySummary | null>(null);
   const [entries, setEntries] = useState<RoyaltyEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -159,7 +167,7 @@ export default function RoyaltiesPage() {
 
     setPaying(true);
     try {
-      // Re-check ledger before submit so wallet balance is never consulted.
+      // Cap is earnings Balance only — then send real UCT via Sphere to the recipient.
       const latest = await api.royalties(token);
       const liveAvailable = BigInt(latest.summary.accruedUct || "0");
       if (requested > liveAvailable) {
@@ -170,17 +178,29 @@ export default function RoyaltiesPage() {
         return;
       }
 
+      await ensureSphereForPayment();
+      prepareSpherePaymentWindow();
+      const paymentRef = await payUct({
+        recipient: to,
+        amount: amountUct,
+        memo: `unipad-earnings-payout:${amountUct}`,
+      });
+      if (!paymentRef?.trim()) {
+        throw new Error("Sphere did not return a payment reference. Try again.");
+      }
+
       const result = await api.payoutRoyalties(token, {
         amountUct,
         recipient: to,
+        paymentRef,
       });
       setSummary({ ...emptySummary(), ...result.summary });
       setEntries(result.entries);
       setAmountDisplay("");
       setRecipient("");
       toast.success(
-        "Payout recorded",
-        `${formatUct(result.paidUct)} UCT sent from earnings · now in Paid out.`,
+        "Sent",
+        `${formatUct(result.paidUct)} UCT delivered to ${tagged}.`,
       );
     } catch (e) {
       toast.error(e);
@@ -332,7 +352,11 @@ export default function RoyaltiesPage() {
               transition={springSnappy}
               onClick={() => void sendPayout()}
             >
-              {paying ? "Sending…" : "Send from earnings"}
+              {paying
+                ? "Sending…"
+                : !sphereReady
+                  ? "Connect Sphere to send"
+                  : "Send with Sphere"}
             </m.button>
           </div>
         </m.div>

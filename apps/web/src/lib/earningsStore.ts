@@ -341,8 +341,14 @@ export async function applyCreatorPayout(
 
   let remaining = amount;
   const now = new Date().toISOString();
-  const paymentRef =
-    input.paymentRef?.trim() || `earnings-ledger:${nanoid(12)}`;
+  const paymentRef = input.paymentRef?.trim();
+  if (!paymentRef) {
+    throw new EarningsHttpError(
+      "Sphere payment required before recording payout",
+      400,
+      "UPAD_PAYMENT_REQUIRED",
+    );
+  }
 
   for (const sale of accruedSales) {
     if (remaining <= 0n) break;

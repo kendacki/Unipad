@@ -5,7 +5,7 @@ import { applyCreatorPayout, EarningsHttpError } from "@/lib/earningsStore";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Record an earnings-ledger payout (capped to accrued sales — not Sphere wallet). */
+/** Record an earnings payout after a successful Sphere UCT send to the recipient. */
 export async function POST(request: Request) {
   try {
     const session = await requireAuth(request.headers.get("Authorization"));
@@ -17,9 +17,19 @@ export async function POST(request: Request) {
 
     const amountUct = String(body.amountUct ?? "").trim();
     const recipient = String(body.recipient ?? "").trim();
+    const paymentRef = String(body.paymentRef ?? "").trim();
     if (!amountUct || !recipient) {
       return NextResponse.json(
         { error: "Amount and recipient are required", code: "UPAD_VALIDATION" },
+        { status: 400 },
+      );
+    }
+    if (!paymentRef || paymentRef.startsWith("earnings-ledger:")) {
+      return NextResponse.json(
+        {
+          error: "Sphere payment required before recording payout",
+          code: "UPAD_PAYMENT_REQUIRED",
+        },
         { status: 400 },
       );
     }
@@ -27,7 +37,7 @@ export async function POST(request: Request) {
     const result = await applyCreatorPayout(session.principal, {
       amountUct,
       recipient,
-      paymentRef: body.paymentRef ?? null,
+      paymentRef,
     });
 
     return NextResponse.json(result, {
