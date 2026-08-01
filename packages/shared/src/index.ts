@@ -174,6 +174,7 @@ export function summarizeRoyaltyLedger(
     platformFeeUct: string;
     creatorNetUct: string;
     payoutStatus: string;
+    saleId?: string;
   }>,
   feeBps: number = DEFAULT_PLATFORM_FEE_BPS,
 ): RoyaltySummary {
@@ -181,12 +182,17 @@ export function summarizeRoyaltyLedger(
   let paid = 0n;
   let gross = 0n;
   let fees = 0n;
+  const saleRoots = new Set<string>();
   for (const e of entries) {
     const net = BigInt(e.creatorNetUct || "0");
     gross += BigInt(e.grossUct || "0");
     fees += BigInt(e.platformFeeUct || "0");
     if (e.payoutStatus === "paid") paid += net;
     else accrued += net;
+    if (e.saleId) {
+      // Partial payouts append `:payout:` — count as one sale for the dashboard.
+      saleRoots.add(e.saleId.split(":payout:")[0] || e.saleId);
+    }
   }
   return {
     accruedUct: accrued.toString(),
@@ -194,7 +200,7 @@ export function summarizeRoyaltyLedger(
     platformFeeBps: normalizePlatformFeeBps(feeBps),
     grossSalesUct: gross.toString(),
     platformFeesUct: fees.toString(),
-    saleCount: entries.length,
+    saleCount: saleRoots.size > 0 ? saleRoots.size : entries.length,
   };
 }
 

@@ -79,18 +79,15 @@ export default function RoyaltiesPage() {
     void refresh();
   }, [refresh]);
 
+  const balanceBase = summary?.accruedUct ?? "0";
+  const balanceDisplay = formatUct(balanceBase);
+  const hasBalance = BigInt(balanceBase || "0") > 0n;
+
+  /** Lifetime sales total — Balance + Paid out; unchanged when sending a payout. */
   const earnedTotal = useMemo(() => {
     if (!summary) return "0";
     return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
   }, [summary]);
-
-  const balanceBase = summary?.accruedUct ?? "0";
-  const balanceDisplay = formatUct(balanceBase);
-  const hasBalance = BigInt(balanceBase || "0") > 0n;
-  const creditedSales = useMemo(
-    () => entries.filter((e) => e.payoutStatus !== "paid").length,
-    [entries],
-  );
 
   const amount = (value?: string) =>
     loading && !summary ? "…" : formatUct(value ?? "0");
@@ -121,8 +118,8 @@ export default function RoyaltiesPage() {
 
   async function sendPayout() {
     if (!token) return;
-    if (!hasBalance || creditedSales <= 0) {
-      toast.error("No earnings balance from sales to send");
+    if (!hasBalance) {
+      toast.error("No balance to send");
       return;
     }
 
@@ -146,18 +143,16 @@ export default function RoyaltiesPage() {
       return;
     }
     if (requested > available) {
-      toast.error(
-        `You can only send up to ${balanceDisplay} UCT from earnings — Sphere wallet balance is not used.`,
-      );
+      toast.error(`Max you can send is ${balanceDisplay} UCT from Balance.`);
       setAmountDisplay(balanceDisplay);
       return;
     }
 
     const tagged = to.startsWith("@") ? to : `@${to}`;
     const ok = await toast.confirm({
-      title: "Send from earnings?",
-      message: `Send ${formatUct(amountUct)} UCT to ${tagged} from your sales earnings only (available ${balanceDisplay} UCT). This does not use your Sphere wallet balance. Paid amounts move to Paid out.`,
-      confirmLabel: "Send from earnings",
+      title: "Send payout?",
+      message: `Send ${formatUct(amountUct)} UCT to ${tagged} from Balance. Earned stays the same; this moves to Paid out.`,
+      confirmLabel: "Send",
       cancelLabel: "Cancel",
     });
     if (!ok) return;
@@ -284,10 +279,7 @@ export default function RoyaltiesPage() {
         >
           <div className="earnings-payout-copy">
             <h3>Send payout</h3>
-            <p>
-              Send from your sales earnings only — not your Sphere wallet balance. Amounts are
-              capped by Balance and move into Paid out when sent.
-            </p>
+            <p>Send from Balance only. Sent amounts move to Paid out.</p>
           </div>
 
           <div className="earnings-payout-grid">
@@ -306,7 +298,7 @@ export default function RoyaltiesPage() {
             </label>
 
             <label className="earnings-field">
-              <span>Amount (earnings only)</span>
+              <span>Amount</span>
               <div className="earnings-amount-row">
                 <input
                   type="text"
@@ -331,11 +323,6 @@ export default function RoyaltiesPage() {
           </div>
 
           <div className="earnings-payout-actions">
-            <p className="earnings-payout-hint">
-              {hasBalance
-                ? `Earnings available ${balanceDisplay} UCT · ${creditedSales} credited sale${creditedSales === 1 ? "" : "s"}`
-                : "No earnings to send yet — only sale credits appear here, not wallet UCT."}
-            </p>
             <m.button
               type="button"
               className="btn btn-signal"
