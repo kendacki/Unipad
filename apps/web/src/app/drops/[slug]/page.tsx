@@ -8,7 +8,7 @@ import { AnimatePresence, m } from "framer-motion";
 import type { Collection, MintIntentResponse, MintResult } from "@unipad/shared";
 import { api, API_URL } from "@/lib/api";
 import { ApiError } from "@/lib/errors";
-import { dropPriceLabel, isMintable, statusLabel, cleanDropDescription } from "@/lib/drops";
+import { dropPriceLabel, isMintable, collectionStatusLabel, cleanDropDescription } from "@/lib/drops";
 import { formatLaunchAt } from "@/lib/schedule";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
@@ -420,7 +420,10 @@ export default function DropDetailPage() {
         </Link>
 
         <div className={`pill-status status-${collection.status}`}>
-          {statusLabel(collection.status)}
+          {collectionStatusLabel({
+            status: collection.status,
+            remainingSupply: liveSupply?.remaining ?? collection.remainingSupply,
+          })}
         </div>
         <h1 className="display" style={{ fontSize: "clamp(2rem, 4vw, 3rem)" }}>
           {collection.name}
@@ -534,7 +537,7 @@ export default function DropDetailPage() {
                       ? "Not published yet"
                       : collection.status === "scheduled"
                         ? "Not open yet"
-                        : "Sold out"
+                        : "Minted"
                     : `Mint · ${priceLabel}`}
         </m.button>
 

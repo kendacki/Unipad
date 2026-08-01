@@ -12,7 +12,7 @@ import {
   dropPriceLabel,
   isMintable,
   sortForStorefront,
-  statusLabel,
+  collectionStatusLabel,
   type DropFilter,
 } from "@/lib/drops";
 import { takePublishedDropStash } from "@/lib/launchCheckpoint";
@@ -165,7 +165,7 @@ export function DropsListing() {
                     <div className="featured-drop-panel">
                       <div className="featured-drop-top">
                         <span className="featured-drop-kicker">Trending</span>
-                        <span className="featured-drop-status">{statusLabel(drop.status)}</span>
+                        <span className="featured-drop-status">{collectionStatusLabel(drop)}</span>
                       </div>
 
                       <h2 className="featured-drop-title">{drop.name}</h2>

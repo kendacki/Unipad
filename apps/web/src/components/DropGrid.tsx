@@ -12,7 +12,7 @@ import {
   isMintable,
   matchesFilter,
   sortForStorefront,
-  statusLabel,
+  collectionStatusLabel,
   type DropFilter,
 } from "@/lib/drops";
 import { cardItem, fadeIn, springSnappy, staggerFast } from "@/lib/motion";
@@ -204,7 +204,7 @@ export function DropGrid({
                         unoptimized={!cover.includes("images.unsplash.com")}
                       />
                       <span className={`drop-badge status-${c.status}`}>
-                        {statusLabel(c.status)}
+                        {collectionStatusLabel(c)}
                       </span>
                     </div>
                     <div className="drop-meta">

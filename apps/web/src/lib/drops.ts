@@ -10,7 +10,7 @@ export function statusLabel(status: CollectionStatus): string {
     case "scheduled":
       return "Upcoming";
     case "sold_out":
-      return "Sold out";
+      return "Minted";
     case "ended":
       return "Ended";
     case "draft":
@@ -18,6 +18,16 @@ export function statusLabel(status: CollectionStatus): string {
     default:
       return status;
   }
+}
+
+/** Storefront tag: fully minted drops show Minted even if status still says live. */
+export function collectionStatusLabel(
+  c: Pick<Collection, "status" | "remainingSupply">,
+): string {
+  if (c.remainingSupply <= 0 && (c.status === "live" || c.status === "sold_out")) {
+    return "Minted";
+  }
+  return statusLabel(c.status);
 }
 
 export function isMintable(c: Collection): boolean {
