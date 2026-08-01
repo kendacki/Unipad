@@ -355,11 +355,21 @@ export async function listPublicCollections(status?: string | null): Promise<Col
   return [...byId.values()];
 }
 
-export async function getResolvedCollection(idOrSlug: string): Promise<Collection | null> {
+export async function getResolvedCollection(
+  idOrSlug: string,
+  viewerPrincipal?: string | null,
+): Promise<Collection | null> {
   const seed = getCatalogCollection(idOrSlug);
   if (seed) return seed;
   const listed = await getStoredListing(idOrSlug);
-  if (!listed || listed.status === "draft") return null;
+  if (!listed) return null;
+  if (listed.status === "draft") {
+    const viewer = viewerPrincipal?.trim().toLowerCase();
+    const owner = listed.creatorPrincipal.trim().toLowerCase();
+    // Creators may preview their own unpublished draft.
+    if (viewer && viewer === owner) return toPublic(listed);
+    return null;
+  }
   return toPublic(listed);
 }
 

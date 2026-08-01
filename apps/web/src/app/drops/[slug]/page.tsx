@@ -50,7 +50,7 @@ export default function DropDetailPage() {
 
   const refresh = useCallback(() => {
     api
-      .getCollection(slug)
+      .getCollection(slug, token ?? undefined)
       .then((c) => {
         setCollection(c);
         setLiveSupply({ minted: c.mintedCount, remaining: c.remainingSupply });
@@ -59,11 +59,12 @@ export default function DropDetailPage() {
       .catch((e) => {
         if (typeof e === "object" && e && "status" in e && (e as { status: number }).status === 404) {
           setNotFound(true);
+          setCollection(null);
         } else {
           toastRef.current.error(e);
         }
       });
-  }, [slug]);
+  }, [slug, token]);
 
   useEffect(() => {
     refresh();
@@ -328,10 +329,19 @@ export default function DropDetailPage() {
       <section className="section">
         <div className="shell" style={{ maxWidth: 480 }}>
           <h2>Drop not found</h2>
-          <p className="muted">It may have been removed or the link is wrong.</p>
-          <Link href="/drops" className="btn btn-signal">
-            Browse drops
-          </Link>
+          <p className="muted">
+            {token
+              ? "It may have been removed or the link is wrong."
+              : "If this is your saved draft, connect the same wallet you used to create it."}
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <Link href="/drops" className="btn btn-signal">
+              Browse drops
+            </Link>
+            <Link href="/launch" className="btn btn-ghost">
+              Create a drop
+            </Link>
+          </div>
         </div>
       </section>
     );
@@ -519,11 +529,22 @@ export default function DropDetailPage() {
                 : stage === "minting" || stage === "intent"
                   ? "Working on it…"
                   : !mintable
-                    ? collection.status === "scheduled"
-                      ? "Not open yet"
-                      : "Sold out"
+                    ? collection.status === "draft"
+                      ? "Not published yet"
+                      : collection.status === "scheduled"
+                        ? "Not open yet"
+                        : "Sold out"
                     : `Mint · ${priceLabel}`}
         </m.button>
+
+        {collection.status === "draft" ? (
+          <p className="hint">
+            Draft preview — publish from Create a drop when you’re ready.{" "}
+            <Link href="/launch" className="text-link">
+              Back to publish
+            </Link>
+          </p>
+        ) : null}
 
         {collection.status === "scheduled" && collection.launchAt ? (
           <p className="hint">Minting opens {formatLaunchAt(collection.launchAt)}.</p>

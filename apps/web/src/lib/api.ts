@@ -66,7 +66,8 @@ export const api = {
     request<{ collections: Collection[] }>(
       status ? `/v1/collections?status=${encodeURIComponent(status)}` : "/v1/collections",
     ),
-  getCollection: (id: string) => request<Collection>(`/v1/collections/${id}`),
+  getCollection: (id: string, token?: string) =>
+    request<Collection>(`/v1/collections/${id}`, { token }),
   createCollection: (token: string, body: CreateCollectionInput) =>
     request<Collection>("/v1/creators/collections", {
       method: "POST",

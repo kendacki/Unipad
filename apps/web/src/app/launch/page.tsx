@@ -727,7 +727,7 @@ export default function LaunchPage() {
                     className="btn btn-ghost"
                     onClick={() => router.push(`/drops/${createdSlug}`)}
                   >
-                    Preview
+                    Preview draft
                   </button>
                 ) : null}
               </div>

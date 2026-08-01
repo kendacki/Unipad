@@ -1321,6 +1321,10 @@ h3,
   color: var(--ink-soft);
 }
 
+.pill-status.status-draft {
+  color: var(--ink-soft);
+}
+
 .supply-bar {
   height: 3px;
   background: var(--mist);
