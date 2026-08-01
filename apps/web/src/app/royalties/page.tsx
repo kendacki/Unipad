@@ -344,15 +344,15 @@ export default function RoyaltiesPage() {
           transition={{ ...springSnappy, delay: 0.08 }}
         >
           <div className="earnings-panel-head">
-            <h3>Sales</h3>
-            <span className="earnings-count-box" aria-label={`${entries.length} sales`}>
+            <h3>Transactions</h3>
+            <span className="earnings-count-box" aria-label={`${entries.length} transactions`}>
               {entries.length}
             </span>
           </div>
 
           {!entries.length ? (
             <div className="earnings-empty">
-              <p>No sales yet</p>
+              <p>No transactions yet</p>
               <p className="muted">When someone mints your drop, it shows here.</p>
             </div>
           ) : (
