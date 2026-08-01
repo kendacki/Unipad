@@ -5,8 +5,6 @@ import { m } from "framer-motion";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
   formatUct,
-  parseUct,
-  splitMintProceeds,
   type RoyaltyEntry,
   type RoyaltySummary,
 } from "@unipad/shared";
@@ -67,18 +65,6 @@ export default function RoyaltiesPage() {
     };
   }, [token, toast]);
 
-  const feePct = (summary?.platformFeeBps ?? DEFAULT_PLATFORM_FEE_BPS) / 100;
-  const example = useMemo(() => {
-    const bps = summary?.platformFeeBps ?? DEFAULT_PLATFORM_FEE_BPS;
-    const split = splitMintProceeds(parseUct("7"), bps);
-    return {
-      gross: formatUct(split.grossUct),
-      fee: formatUct(split.platformFeeUct),
-      net: formatUct(split.creatorNetUct),
-      youPct: 100 - bps / 100,
-    };
-  }, [summary?.platformFeeBps]);
-
   const netTotal = useMemo(() => {
     if (!summary) return "0";
     return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
@@ -91,12 +77,9 @@ export default function RoyaltiesPage() {
     return (
       <section className="section earnings-page">
         <div className="shell earnings-shell">
-          <m.div className="earnings-gate earnings-glass" variants={fadeUp} initial="hidden" animate="show">
-            <p className="earnings-eyebrow">Seller dashboard</p>
+          <m.div className="earnings-gate panel glass" variants={fadeUp} initial="hidden" animate="show">
             <h2>Earnings</h2>
-            <p className="hint">
-              Connect to see mint sales, platform fees, and the balance credited to you.
-            </p>
+            <p className="hint">Connect to see sales on your drops.</p>
             <m.button
               type="button"
               className="btn btn-primary"
@@ -131,163 +114,121 @@ export default function RoyaltiesPage() {
       <div className="shell earnings-shell">
         <m.header className="earnings-hero" variants={fadeUp} initial="hidden" animate="show">
           <div className="earnings-hero-copy">
-            <p className="earnings-eyebrow">Seller dashboard</p>
             <h2>Earnings</h2>
-            <p>Track mint sales and what lands in your seller balance.</p>
+            <p>Sales from your drops.</p>
           </div>
           <m.div
-            className="earnings-hero-balance earnings-glass"
+            className="earnings-hero-balance panel glass"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={springSnappy}
           >
-            <span className="earnings-kpi-label">Available balance</span>
+            <span className="earnings-kpi-label">Balance</span>
             <strong className="earnings-hero-value">
               {loading && !summary ? "…" : formatUct(summary?.accruedUct ?? "0")}
               <span> UCT</span>
             </strong>
-            <span className="earnings-kpi-hint">
-              Net after {feePct}% fee · lifetime {formatUct(netTotal)} UCT
-            </span>
+            <span className="earnings-kpi-hint">Lifetime {formatUct(netTotal)} UCT</span>
           </m.div>
         </m.header>
 
         <div className="earnings-kpis">
           <m.div
-            className="earnings-kpi earnings-glass"
+            className="earnings-kpi panel glass"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={springSnappy}
           >
             <span className="earnings-kpi-label">Gross sales</span>
-            <strong className="earnings-kpi-value">
-              {display(summary?.grossSalesUct)}
-            </strong>
+            <strong className="earnings-kpi-value">{display(summary?.grossSalesUct)}</strong>
             <span className="earnings-kpi-hint">
               {summary?.saleCount ?? 0} mint{(summary?.saleCount ?? 0) === 1 ? "" : "s"}
             </span>
           </m.div>
           <m.div
-            className="earnings-kpi earnings-glass"
+            className="earnings-kpi panel glass"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...springSnappy, delay: 0.05 }}
           >
-            <span className="earnings-kpi-label">Platform fees</span>
-            <strong className="earnings-kpi-value">
-              {display(summary?.platformFeesUct)}
-            </strong>
-            <span className="earnings-kpi-hint">{feePct}% of each mint</span>
+            <span className="earnings-kpi-label">Fees</span>
+            <strong className="earnings-kpi-value">{display(summary?.platformFeesUct)}</strong>
+            <span className="earnings-kpi-hint">Taken from sales</span>
           </m.div>
           <m.div
-            className="earnings-kpi earnings-glass"
+            className="earnings-kpi panel glass"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...springSnappy, delay: 0.1 }}
           >
             <span className="earnings-kpi-label">Paid out</span>
-            <strong className="earnings-kpi-value">
-              {display(summary?.paidUct)}
-            </strong>
-            <span className="earnings-kpi-hint">Sent to your wallet</span>
+            <strong className="earnings-kpi-value">{display(summary?.paidUct)}</strong>
+            <span className="earnings-kpi-hint">To your wallet</span>
           </m.div>
         </div>
 
-        <div className="earnings-body">
-          <m.aside
-            className="earnings-split earnings-glass"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springSnappy, delay: 0.08 }}
-          >
-            <div className="earnings-panel-head">
-              <h3>Mint split</h3>
-              <span className="earnings-chip">Example · {example.gross} UCT</span>
-            </div>
-            <p className="earnings-split-copy">
-              Each mint takes a {feePct}% platform fee. The rest is credited to your balance.
-            </p>
-            <div className="earnings-meter" aria-hidden>
-              <div className="earnings-meter-you" style={{ flexGrow: example.youPct }} />
-              <div className="earnings-meter-fee" style={{ flexGrow: feePct }} />
-            </div>
-            <ul className="earnings-split-list">
-              <li>
-                <span className="earnings-dot you" />
-                <span>You ({example.youPct}%)</span>
-                <strong>{example.net} UCT</strong>
-              </li>
-              <li>
-                <span className="earnings-dot fee" />
-                <span>Platform ({feePct}%)</span>
-                <strong>{example.fee} UCT</strong>
-              </li>
-            </ul>
-          </m.aside>
+        <m.div
+          className="earnings-activity panel glass"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...springSnappy, delay: 0.12 }}
+        >
+          <div className="earnings-panel-head">
+            <h3>Activity</h3>
+            <span className="muted">{entries.length}</span>
+          </div>
 
-          <m.div
-            className="earnings-activity earnings-glass"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...springSnappy, delay: 0.12 }}
-          >
-            <div className="earnings-panel-head">
-              <h3>Sales activity</h3>
-              <span className="muted">{entries.length} recent</span>
+          {!entries.length ? (
+            <div className="earnings-empty">
+              <p>No sales yet</p>
+              <p className="muted">Mints on your drops show up here.</p>
             </div>
-
-            {!entries.length ? (
-              <div className="earnings-empty">
-                <p>No sales yet</p>
-                <p className="muted">When someone mints your drop, it appears here.</p>
-              </div>
-            ) : (
-              <div className="earnings-table-wrap">
-                <table className="earnings-table">
-                  <thead>
-                    <tr>
-                      <th>Drop</th>
-                      <th>Sale</th>
-                      <th>Fee</th>
-                      <th>You get</th>
-                      <th>Status</th>
-                      <th>When</th>
+          ) : (
+            <div className="earnings-table-wrap">
+              <table className="earnings-table">
+                <thead>
+                  <tr>
+                    <th>Drop</th>
+                    <th>Sale</th>
+                    <th>Fee</th>
+                    <th>You get</th>
+                    <th>Status</th>
+                    <th>When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((e) => (
+                    <tr key={e.id}>
+                      <td>
+                        <strong>{e.collectionName}</strong>
+                      </td>
+                      <td>{formatUct(e.grossUct)} UCT</td>
+                      <td className="muted">{formatUct(e.platformFeeUct)} UCT</td>
+                      <td>
+                        <strong>{formatUct(e.creatorNetUct)} UCT</strong>
+                      </td>
+                      <td>
+                        <span
+                          className={`earnings-status ${
+                            e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
+                          }`}
+                        >
+                          {statusLabel(e.payoutStatus)}
+                        </span>
+                      </td>
+                      <td className="muted">
+                        {new Date(e.createdAt).toLocaleString(undefined, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((e) => (
-                      <tr key={e.id}>
-                        <td>
-                          <strong>{e.collectionName}</strong>
-                        </td>
-                        <td>{formatUct(e.grossUct)} UCT</td>
-                        <td className="muted">{formatUct(e.platformFeeUct)} UCT</td>
-                        <td>
-                          <strong>{formatUct(e.creatorNetUct)} UCT</strong>
-                        </td>
-                        <td>
-                          <span
-                            className={`earnings-status ${
-                              e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
-                            }`}
-                          >
-                            {statusLabel(e.payoutStatus)}
-                          </span>
-                        </td>
-                        <td className="muted">
-                          {new Date(e.createdAt).toLocaleString(undefined, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </m.div>
-        </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </m.div>
       </div>
     </m.section>
   );
