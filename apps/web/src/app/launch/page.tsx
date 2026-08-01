@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
-import { parseUct, type PhaseType } from "@unipad/shared";
+import { normalizeSphereRecipient, parseUct, type PhaseType } from "@unipad/shared";
 import { api } from "@/lib/api";
 import {
   clearLaunchCheckpoint,
@@ -289,14 +289,33 @@ export default function LaunchPage() {
       saveLaunchCheckpoint(checkpointPayload(created.id, created.slug));
       const alPhase = created.phases.find((p) => p.type === "allowlist");
 
-      if (alPhase && allowlistText.trim()) {
+      if (hasAllowlist) {
+        if (!alPhase) {
+          throw new Error("Allowlist phase missing — enable Allowlist and try again.");
+        }
         const entries = allowlistText
           .split(/[\n,]+/)
           .map((w) => w.trim())
           .filter(Boolean)
-          .map((walletPrincipal) => ({ walletPrincipal, maxMints: alPhase.maxPerWallet }));
-        if (entries.length) {
-          await api.upsertAllowlist(t, created.id, alPhase.id, entries);
+          .map((raw) => {
+            try {
+              return {
+                walletPrincipal: normalizeSphereRecipient(raw),
+                maxMints: alPhase.maxPerWallet,
+              };
+            } catch {
+              return { walletPrincipal: raw.toLowerCase(), maxMints: alPhase.maxPerWallet };
+            }
+          })
+          .filter((e) => Boolean(e.walletPrincipal));
+
+        if (!entries.length) {
+          throw new Error("Add at least one valid @nametag or wallet to the guest list.");
+        }
+
+        const saved = await api.upsertAllowlist(t, created.id, alPhase.id, entries);
+        if (!saved.entries?.length) {
+          throw new Error("Guest list did not save. Check each @nametag and try again.");
         }
       }
 
@@ -642,9 +661,15 @@ export default function LaunchPage() {
                         type="checkbox"
                         checked={p.enabled}
                         onChange={(e) => {
-                          const next = [...phases];
-                          next[idx] = { ...p, enabled: e.target.checked };
-                          setPhases(next);
+                          const enabled = e.target.checked;
+                          setPhases((prev) => {
+                            const next = prev.map((row, i) =>
+                              i === idx ? { ...row, enabled } : row,
+                            );
+                            // Allowlist minting is exclusive while that phase is open —
+                            // keep Public available for later windows, but warn via copy.
+                            return next;
+                          });
                         }}
                       />
                       <span>{p.name}</span>
@@ -668,6 +693,12 @@ export default function LaunchPage() {
                   </div>
                 ))}
               </div>
+              {hasAllowlist ? (
+                <p className="hint" style={{ margin: 0 }}>
+                  Allowlist is on — only guest-list @nametags/wallets can mint while that phase is
+                  live (Public does not bypass it).
+                </p>
+              ) : null}
 
               {actions(
                 () => setStep(0),
@@ -703,7 +734,7 @@ export default function LaunchPage() {
                 />
               </label>
               <p className="hint" style={{ margin: 0 }}>
-                One @nametag or wallet per line.
+                One @nametag or wallet per line. Only these users can mint while Allowlist is live.
               </p>
               {actions(
                 () => setStep(1),

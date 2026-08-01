@@ -373,6 +373,15 @@ async function resolveNametagToPubkey(nametag: string): Promise<string | null> {
   return pubkey && CHAIN_PUBKEY_RE.test(pubkey) ? pubkey : null;
 }
 
+/** Resolve @nametag → bound chain pubkey (for allowlist + transfers). */
+export async function lookupNametagPubkey(nametag: string): Promise<string | null> {
+  try {
+    return await resolveNametagToPubkey(nametag);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve transfer recipient to a chain pubkey when we already know the nametag binding.
  * Otherwise keep @nametag (claimed later when the recipient opens My mints).
@@ -432,9 +441,18 @@ export async function claimNametagTokens(
 export async function createMintIntent(
   walletPrincipal: string,
   collectionIdOrSlug: string,
+  opts?: { nametag?: string | null },
 ): Promise<MintIntentResponse> {
   assertPersistentLedger();
   const principal = normalizePrincipal(walletPrincipal);
+  const tag = opts?.nametag?.trim();
+  if (tag) {
+    try {
+      await bindNametag(tag, principal);
+    } catch {
+      /* binding is best-effort before allowlist match */
+    }
+  }
   const base = await getResolvedCollection(collectionIdOrSlug);
   if (!base) throw new MintHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
 
@@ -456,15 +474,31 @@ export async function createMintIntent(
     const endOk = !p.endsAt || new Date(p.endsAt).getTime() > now;
     return startOk && endOk;
   });
-  const ranked = [...(timed.length ? timed : collection.phases)].sort((a, b) => {
+  // Never invent phases outside their window — empty window means closed.
+  if (!timed.length) {
+    throw new MintHttpError("No active mint phase", 400, "UPAD_NO_PHASE");
+  }
+
+  const ranked = [...timed].sort((a, b) => {
     const rank = (t: string) => (t === "creator" ? 0 : t === "allowlist" ? 1 : 2);
     return rank(a.type) - rank(b.type);
   });
+
+  const allowlistActive = ranked.some((p) => p.type === "allowlist");
 
   let phase = null as (typeof collection.phases)[number] | null;
   let phaseCap = 1;
   let lastAllowlistError: ListingHttpError | null = null;
   for (const candidate of ranked) {
+    // While an allowlist phase is open, do not fall through to public for
+    // wallets that failed the guest list — only listed users may mint.
+    if (allowlistActive && candidate.type !== "allowlist" && lastAllowlistError) {
+      break;
+    }
+    if (candidate.type === "creator") {
+      const owner = normalizePrincipal(collection.creatorPrincipal);
+      if (principal !== owner) continue;
+    }
     try {
       const al = await assertAllowlisted(collection.id, principal, candidate);
       phase = candidate;
@@ -484,7 +518,7 @@ export async function createMintIntent(
   if (!phase) {
     if (lastAllowlistError) {
       throw new MintHttpError(
-        lastAllowlistError.message,
+        "Only allowlisted @nametags or wallets can mint right now",
         lastAllowlistError.status,
         lastAllowlistError.code,
       );

@@ -453,6 +453,14 @@ export async function upsertListingAllowlist(
     throw new ListingHttpError("Phase is not an allowlist phase", 400, "UPAD_VALIDATION");
   }
 
+  if (!entries?.length) {
+    throw new ListingHttpError(
+      "Add at least one @nametag or wallet to the allowlist",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
+
   const byWallet = new Map<string, AllowlistRow>();
   for (const row of listing.allowlist.filter((e) => e.phaseId !== phaseId)) {
     byWallet.set(`${row.phaseId}:${normalizeWalletKey(row.walletPrincipal)}`, row);
@@ -469,6 +477,14 @@ export async function upsertListingAllowlist(
   }
 
   const allowlist = [...byWallet.values()];
+  const phaseCount = allowlist.filter((e) => e.phaseId === phaseId).length;
+  if (!phaseCount) {
+    throw new ListingHttpError(
+      "No valid allowlist entries — use @nametag or a wallet pubkey",
+      400,
+      "UPAD_VALIDATION",
+    );
+  }
   const next: StoredListing = {
     ...listing,
     allowlist,
@@ -536,24 +552,45 @@ export async function replaceListingPhases(
   return toPublic(next);
 }
 
-/** Enforce allowlist when the active phase requires it. */
+/** Enforce allowlist when the phase requires it. Matches hex wallets and @nametags. */
 export async function assertAllowlisted(
   collectionId: string,
   walletPrincipal: string,
   phase: CollectionPhase,
 ): Promise<{ maxMints: number } | null> {
   if (phase.type !== "allowlist") return null;
+
   const listing = await getStoredListing(collectionId);
   if (!listing) {
-    // Seed catalog has no allowlist data — treat as open.
-    return null;
-  }
-  const key = normalizeWalletKey(walletPrincipal);
-  const entry = listing.allowlist.find(
-    (e) => e.phaseId === phase.id && normalizeWalletKey(e.walletPrincipal) === key,
-  );
-  if (!entry) {
+    // Creator listings always have blob rows. Missing data ⇒ deny allowlist mints.
     throw new ListingHttpError("Wallet not on allowlist", 403, "UPAD_NOT_ALLOWLISTED");
   }
-  return { maxMints: entry.maxMints };
+
+  const phaseRows = listing.allowlist.filter((e) => e.phaseId === phase.id);
+  if (!phaseRows.length) {
+    throw new ListingHttpError(
+      "Allowlist is empty — only guest-list users can mint this phase",
+      403,
+      "UPAD_NOT_ALLOWLISTED",
+    );
+  }
+
+  const walletKey = normalizeWalletKey(walletPrincipal);
+  const direct = phaseRows.find(
+    (e) => normalizeWalletKey(e.walletPrincipal) === walletKey,
+  );
+  if (direct) return { maxMints: direct.maxMints };
+
+  // Guest lists are usually @nametag; session principal is the chain pubkey.
+  const { lookupNametagPubkey } = await import("@/lib/mintStore");
+  for (const entry of phaseRows) {
+    const entryKey = normalizeWalletKey(entry.walletPrincipal);
+    if (!entryKey.startsWith("@")) continue;
+    const bound = await lookupNametagPubkey(entryKey);
+    if (bound && normalizeWalletKey(bound) === walletKey) {
+      return { maxMints: entry.maxMints };
+    }
+  }
+
+  throw new ListingHttpError("Wallet not on allowlist", 403, "UPAD_NOT_ALLOWLISTED");
 }

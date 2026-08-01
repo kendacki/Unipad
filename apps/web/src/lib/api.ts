@@ -153,10 +153,11 @@ export const api = {
       });
     }
   },
-  mintIntent: (token: string, id: string) =>
+  mintIntent: (token: string, id: string, nametag?: string | null) =>
     request<MintIntentResponse>(`/v1/collections/${id}/mint-intent`, {
       method: "POST",
       token,
+      body: JSON.stringify(nametag ? { nametag } : {}),
     }),
   mint: (token: string, id: string, idempotencyKey: string, paymentRef: string) =>
     request<MintResult>(`/v1/collections/${id}/mint`, {

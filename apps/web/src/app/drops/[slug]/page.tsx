@@ -26,6 +26,7 @@ export default function DropDetailPage() {
   const {
     token,
     principal,
+    displayName,
     ensureSphereConnected,
     ensureSphereForPayment,
     connecting,
@@ -202,11 +203,11 @@ export default function DropDetailPage() {
       setStage("intent");
       toast.info("Reserving your spot…");
       try {
-        nextIntent = await api.mintIntent(sessionToken, collection.id);
+        nextIntent = await api.mintIntent(sessionToken, collection.id, displayName);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           sessionToken = await ensureSphereConnected();
-          nextIntent = await api.mintIntent(sessionToken, collection.id);
+          nextIntent = await api.mintIntent(sessionToken, collection.id, displayName);
         } else {
           throw err;
         }
@@ -463,6 +464,18 @@ export default function DropDetailPage() {
             {busy ? <span className="supply-pulse" /> : null}
           </div>
         </div>
+
+        {collection.phases.some((p) => {
+          if (p.type !== "allowlist") return false;
+          const now = Date.now();
+          const startOk = !p.startsAt || Date.parse(p.startsAt) <= now;
+          const endOk = !p.endsAt || Date.parse(p.endsAt) > now;
+          return startOk && endOk;
+        }) ? (
+          <p className="hint" style={{ margin: 0 }}>
+            Allowlist mint — only guest-list @nametags or wallets can mint right now.
+          </p>
+        ) : null}
 
         <AnimatePresence>
           {busy || stage === "done" ? (

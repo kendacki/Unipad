@@ -30,7 +30,7 @@ const CATALOG: Record<string, ErrorInfo> = {
   UPAD_NOT_ALLOWLISTED: {
     code: "UPAD_NOT_ALLOWLISTED",
     title: "Not on the list",
-    message: "This phase is for allowlisted wallets only.",
+    message: "Only allowlisted @nametags or wallets can mint this drop right now.",
   },
   UPAD_MINT_CAP: {
     code: "UPAD_MINT_CAP",

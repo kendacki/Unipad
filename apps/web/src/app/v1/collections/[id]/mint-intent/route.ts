@@ -11,7 +11,12 @@ export async function POST(request: Request, ctx: Ctx) {
   try {
     const session = await requireAuth(request.headers.get("Authorization"));
     const { id } = await ctx.params;
-    return NextResponse.json(await createMintIntent(session.principal, id));
+    const body = (await request.json().catch(() => ({}))) as { nametag?: string };
+    return NextResponse.json(
+      await createMintIntent(session.principal, id, {
+        nametag: body.nametag ?? null,
+      }),
+    );
   } catch (err) {
     return mintErrorResponse(err);
   }
