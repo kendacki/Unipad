@@ -125,7 +125,11 @@ Site: [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
 
 | Variable | Purpose |
 |----------|---------|
-| `BLOB_READ_WRITE_TOKEN` | Listings, mint ledger, earnings, cover uploads |
+| `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (preferred store) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for ledger + media |
+| `SUPABASE_OBJECTS_TABLE` | Optional; default `unipad_objects` |
+| `SUPABASE_MEDIA_BUCKET` | Optional; default `unipad-media` (public) |
+| `BLOB_READ_WRITE_TOKEN` | Legacy fallback only if Supabase is unset |
 | `JWT_SECRET` | Session tokens |
 | `TREASURY_PRINCIPAL` | UCT mint recipient (e.g. `@cryptzarr`) |
 | `PLATFORM_FEE_BPS` | Mint platform fee in bps (default `250` = 2.5%) |
@@ -134,6 +138,8 @@ Site: [https://unipadnfts.vercel.app](https://unipadnfts.vercel.app)
 | `NEXT_PUBLIC_NETWORK` | `testnet2` |
 | `NEXT_PUBLIC_SITE_URL` | `https://unipadnfts.vercel.app` |
 | `NEXT_PUBLIC_UNIPAD_DEV_MOCK` | Must be `false` in production |
+
+**Supabase setup:** run `apps/web/supabase/unipad_objects.sql` in the SQL editor, create/public the `unipad-media` bucket, then set the env vars on Vercel. Pathnames stay the same (`listings/…`, `mints/…`, `earnings/…`). To copy existing Blob JSON into Supabase once: `pnpm --filter @unipad/web exec tsx scripts/migrate-blob-to-supabase.mts` (with both tokens set).
 
 See `.env.example` for the full list (including optional API / Redis settings).
 
@@ -146,7 +152,7 @@ See `.env.example` for the full list (including optional API / Redis settings).
 | Free listing (no create fee) | Done |
 | Browse Live / Upcoming / All | Done |
 | Create, draft preview, publish / schedule | Done |
-| Cover upload (Blob) or image link | Done |
+| Cover upload (Supabase Storage) or image link | Done |
 | Sphere connect + UCT mint | Done |
 | Seller Earnings dashboard | Done |
 | My mints + NFT transfer | Done |

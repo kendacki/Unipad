@@ -1,8 +1,7 @@
 /**
  * Creator drop listings for the Vercel storefront.
- * Persists drafts → publish in Blob (same token as mints); merges with static catalog.
+ * Persists drafts → publish via objectStore (Supabase preferred; Blob fallback).
  */
-import { list, put } from "@vercel/blob";
 import { nanoid } from "nanoid";
 import {
   normalizeSphereRecipient,
@@ -13,6 +12,12 @@ import {
   type PhaseType,
 } from "@unipad/shared";
 import { getCatalogCollection, listCatalogCollections } from "@/lib/catalog";
+import {
+  getJson,
+  isPersistentStoreConfigured,
+  listJsonUnder,
+  putJson,
+} from "@/lib/objectStore";
 
 export type AllowlistRow = {
   phaseId: string;
@@ -59,7 +64,7 @@ function memory(): MemoryDb {
 }
 
 function useBlob(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return isPersistentStoreConfigured();
 }
 
 export class ListingHttpError extends Error {
@@ -75,7 +80,7 @@ export class ListingHttpError extends Error {
 function assertPersistentStore() {
   if (process.env.VERCEL && !useBlob()) {
     throw new ListingHttpError(
-      "Listing storage is not configured on this deployment",
+      "Listing storage is not configured (set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)",
       503,
       "UPAD_UNAVAILABLE",
     );
@@ -101,59 +106,6 @@ function publicRegistryPath() {
 
 function normalizePrincipalKey(principal: string): string {
   return principal.trim().toLowerCase().replace(/^0x/, "");
-}
-
-async function putJson(pathname: string, data: unknown) {
-  await put(pathname, JSON.stringify(data), {
-    access: "public",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: "application/json",
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-}
-
-async function getJson<T>(pathname: string): Promise<T | null> {
-  const { blobs } = await list({
-    prefix: pathname,
-    limit: 1,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-  const hit = blobs.find((b) => b.pathname === pathname);
-  if (!hit) return null;
-  // Bust CDN cache so publish → list reads the latest draft/live JSON.
-  const url = `${hit.url}${hit.url.includes("?") ? "&" : "?"}_=${Date.now()}`;
-  const res = await fetch(url, {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-  });
-  if (!res.ok) return null;
-  return (await res.json()) as T;
-}
-
-async function listJsonUnder<T>(prefix: string): Promise<T[]> {
-  const out: T[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await list({
-      prefix,
-      cursor,
-      limit: 1000,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
-    for (const blob of page.blobs) {
-      if (!blob.pathname.endsWith(".json")) continue;
-      const url = `${blob.url}${blob.url.includes("?") ? "&" : "?"}_=${Date.now()}`;
-      const res = await fetch(url, {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-      });
-      if (!res.ok) continue;
-      out.push((await res.json()) as T);
-    }
-    cursor = page.hasMore ? page.cursor : undefined;
-  } while (cursor);
-  return out;
 }
 
 export function pickActivePhase(

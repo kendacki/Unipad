@@ -1,8 +1,8 @@
 /**
  * Seller earnings ledger for primary mint sales.
  * Uses shared split/summary helpers so storefront + API stay in sync.
+ * Persists via objectStore (Supabase preferred; Blob fallback).
  */
-import { list, put } from "@vercel/blob";
 import { nanoid } from "nanoid";
 import {
   DEFAULT_PLATFORM_FEE_BPS,
@@ -14,6 +14,12 @@ import {
   type RoyaltyEntry,
   type RoyaltySummary,
 } from "@unipad/shared";
+import {
+  getJson,
+  isPersistentStoreConfigured,
+  listJsonUnder,
+  putJson,
+} from "@/lib/objectStore";
 
 export type StoredSale = RoyaltyEntry & {
   creatorPrincipal: string;
@@ -53,7 +59,7 @@ function memory(): MemoryDb {
 }
 
 function useBlob(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return isPersistentStoreConfigured();
 }
 
 export function platformFeeBps(): number {
@@ -76,50 +82,6 @@ function saleIdPath(saleId: string) {
 function creatorSalePath(principal: string, id: string) {
   const safe = encodeURIComponent(normalizeOwnerKey(principal)).slice(0, 120);
   return `earnings/creators/${safe}/${id}.json`;
-}
-
-async function putJson(pathname: string, data: unknown) {
-  await put(pathname, JSON.stringify(data), {
-    access: "public",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: "application/json",
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-}
-
-async function getJson<T>(pathname: string): Promise<T | null> {
-  const { blobs } = await list({
-    prefix: pathname,
-    limit: 1,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-  const hit = blobs.find((b) => b.pathname === pathname);
-  if (!hit) return null;
-  const res = await fetch(hit.url, { cache: "no-store" });
-  if (!res.ok) return null;
-  return (await res.json()) as T;
-}
-
-async function listJsonUnder<T>(prefix: string): Promise<T[]> {
-  const out: T[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await list({
-      prefix,
-      cursor,
-      limit: 1000,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
-    for (const blob of page.blobs) {
-      if (!blob.pathname.endsWith(".json")) continue;
-      const res = await fetch(blob.url, { cache: "no-store" });
-      if (!res.ok) continue;
-      out.push((await res.json()) as T);
-    }
-    cursor = page.hasMore ? page.cursor : undefined;
-  } while (cursor);
-  return out;
 }
 
 async function saveSale(sale: StoredSale) {

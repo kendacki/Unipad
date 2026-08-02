@@ -130,33 +130,17 @@ export const api = {
       token,
       body: JSON.stringify(body),
     }),
-  /** Prefer Vercel Blob client upload for covers; falls back to API multipart. */
+  /** Cover upload via multipart → Supabase Storage (or Blob fallback). */
   uploadMedia: async (token: string, file: File, collectionId?: string) => {
-    try {
-      const { upload } = await import("@vercel/blob/client");
-      const blob = await upload(`covers/${file.name}`, file, {
-        access: "public",
-        // Always same-origin Next route so covers land in Vercel Blob.
-        handleUploadUrl: "/v1/media/upload",
-        contentType: file.type || "application/octet-stream",
-      });
-      return {
-        id: blob.pathname,
-        url: blob.url,
-        contentHash: blob.pathname,
-        deduped: false,
-      } satisfies MediaUploadResult;
-    } catch {
-      const form = new FormData();
-      form.append("file", file);
-      if (collectionId) form.append("collectionId", collectionId);
-      return request<MediaUploadResult>("/v1/media/upload", {
-        method: "POST",
-        token,
-        json: false,
-        body: form,
-      });
-    }
+    const form = new FormData();
+    form.append("file", file);
+    if (collectionId) form.append("collectionId", collectionId);
+    return request<MediaUploadResult>("/v1/media/upload", {
+      method: "POST",
+      token,
+      json: false,
+      body: form,
+    });
   },
   mintIntent: (token: string, id: string, nametag?: string | null) =>
     request<MintIntentResponse>(`/v1/collections/${id}/mint-intent`, {

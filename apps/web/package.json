@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "favicon": "node scripts/gen-favicon.mjs"
+    "favicon": "node scripts/gen-favicon.mjs",
+    "migrate:blob-to-supabase": "tsx scripts/migrate-blob-to-supabase.mts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
     "@unicitylabs/sphere-sdk": "0.13.1",
     "@unipad/shared": "workspace:*",
     "@vercel/blob": "^2.6.1",
@@ -26,6 +28,7 @@
     "@types/react-dom": "^19.0.4",
     "eslint": "^9.22.0",
     "eslint-config-next": "^15.2.4",
+    "tsx": "^4.23.1",
     "typescript": "~5.7.0"
   }
 }

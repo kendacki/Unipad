@@ -1,9 +1,8 @@
 /**
- * Serverless mint settlement for the Vercel storefront.
- * Persists intents + ledger in Vercel Blob when configured; otherwise in-memory
- * (local Next without BLOB_READ_WRITE_TOKEN).
+ * Serverless mint settlement for the storefront.
+ * Persists intents + ledger via objectStore (Supabase preferred; Blob fallback);
+ * otherwise in-memory for local Next without persistent env.
  */
-import { del, list, put } from "@vercel/blob";
 import { nanoid } from "nanoid";
 import {
   DEFAULT_TREASURY_PRINCIPAL,
@@ -21,6 +20,15 @@ import {
   pickActivePhase,
 } from "@/lib/listingStore";
 import { recordMintSale } from "@/lib/earningsStore";
+import {
+  getJson,
+  isPersistentStoreConfigured,
+  listJsonUnder,
+  listPathnames,
+  putJson as putObjectJson,
+  putJsonExclusive,
+  removeObject,
+} from "@/lib/objectStore";
 
 export type StoredIntent = {
   idempotencyKey: string;
@@ -113,13 +121,13 @@ async function withCollectionClaimLock<T>(collectionId: string, fn: () => Promis
 }
 
 function useBlob(): boolean {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return isPersistentStoreConfigured();
 }
 
 function assertPersistentLedger() {
   if (process.env.VERCEL && !useBlob()) {
     throw new MintHttpError(
-      "Mint storage is not configured on this deployment",
+      "Mint storage is not configured (set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)",
       503,
       "UPAD_UNAVAILABLE",
     );
@@ -242,47 +250,11 @@ function normalizePrincipal(principal: string) {
 }
 
 async function putJson(pathname: string, data: unknown, opts?: { overwrite?: boolean }) {
-  await put(pathname, JSON.stringify(data), {
-    access: "public",
-    addRandomSuffix: false,
-    allowOverwrite: opts?.overwrite ?? true,
-    contentType: "application/json",
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-}
-
-async function getJson<T>(pathname: string): Promise<T | null> {
-  const { blobs } = await list({
-    prefix: pathname,
-    limit: 1,
-    token: process.env.BLOB_READ_WRITE_TOKEN,
-  });
-  const hit = blobs.find((b) => b.pathname === pathname);
-  if (!hit) return null;
-  const res = await fetch(hit.url, { cache: "no-store" });
-  if (!res.ok) return null;
-  return (await res.json()) as T;
-}
-
-async function listJsonUnder<T>(prefix: string): Promise<T[]> {
-  const out: T[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await list({
-      prefix,
-      cursor,
-      limit: 1000,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
-    for (const blob of page.blobs) {
-      if (!blob.pathname.endsWith(".json")) continue;
-      const res = await fetch(blob.url, { cache: "no-store" });
-      if (!res.ok) continue;
-      out.push((await res.json()) as T);
-    }
-    cursor = page.hasMore ? page.cursor : undefined;
-  } while (cursor);
-  return out;
+  if (opts?.overwrite === false) {
+    await putJsonExclusive(pathname, data);
+    return;
+  }
+  await putObjectJson(pathname, data);
 }
 
 export class MintHttpError extends Error {
@@ -303,19 +275,8 @@ export async function countMinted(collectionId: string): Promise<number> {
     }
     return n;
   }
-  let n = 0;
-  let cursor: string | undefined;
-  do {
-    const page = await list({
-      prefix: `mints/tokens/${collectionId}/`,
-      cursor,
-      limit: 1000,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
-    n += page.blobs.filter((b) => b.pathname.endsWith(".json")).length;
-    cursor = page.hasMore ? page.cursor : undefined;
-  } while (cursor);
-  return n;
+  const paths = await listPathnames(`mints/tokens/${collectionId}/`);
+  return paths.filter((p) => p.pathname.endsWith(".json")).length;
 }
 
 async function tokenExists(collectionId: string, tokenId: number): Promise<boolean> {
@@ -346,9 +307,7 @@ async function releaseReservation(
   memory().reservations.delete(key);
   if (!useBlob()) return;
   try {
-    await del(reservationPath(collectionId, tokenId), {
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    });
+    await removeObject(reservationPath(collectionId, tokenId));
   } catch {
     /* missing is fine */
   }
@@ -534,21 +493,10 @@ async function loadToken(collectionId: string, tokenId: number): Promise<StoredT
 async function removeWalletIndex(owner: string, collectionId: string, tokenId: number) {
   if (!useBlob()) return;
   const pathname = walletTokenPath(owner, collectionId, tokenId);
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
   try {
-    await del(pathname, { token });
+    await removeObject(pathname);
   } catch {
-    try {
-      const { blobs } = await list({ prefix: pathname, limit: 10, token });
-      for (const blob of blobs) {
-        // Exact path only — never startsWith(pathname) (can delete sibling indexes).
-        if (blob.pathname === pathname) {
-          await del(blob.url, { token });
-        }
-      }
-    } catch {
-      /* best-effort */
-    }
+    /* best-effort */
   }
 }
 
