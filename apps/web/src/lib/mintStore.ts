@@ -1186,25 +1186,18 @@ export async function transferToken(params: {
   await putJson(tokenPath(updated.collectionId, updated.tokenId), updated, {
     overwrite: true,
   });
+  // Recipient wallet index must exist before sender indexes are cleared.
+  // Write twice — Vercel Blob get-after-put can lag, so we don't gate on a read.
   await putJson(
     walletTokenPath(updated.ownerPrincipal, updated.collectionId, updated.tokenId),
     updated,
     { overwrite: true },
   );
-
-  // Confirm recipient index landed before clearing the sender — otherwise a failed
-  // index write + sender cleanup can make the mint disappear from every wallet.
-  const recipientIndex = await getJson<StoredToken>(
+  await putJson(
     walletTokenPath(updated.ownerPrincipal, updated.collectionId, updated.tokenId),
+    updated,
+    { overwrite: true },
   );
-  if (!recipientIndex || recipientIndex.ownerPrincipal !== updated.ownerPrincipal) {
-    // Retry once
-    await putJson(
-      walletTokenPath(updated.ownerPrincipal, updated.collectionId, updated.tokenId),
-      updated,
-      { overwrite: true },
-    );
-  }
 
   // Always clear sender indexes (hex session + previous owner key / nametag key).
   const removeOwners = new Set<string>([previousOwner, from]);

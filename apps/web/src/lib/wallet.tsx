@@ -411,25 +411,33 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       try {
         const resolveMethod =
           (RPC_METHODS as Record<string, string>).RESOLVE || "sphere_resolve";
-        const resolved = await client.query<{
+        const resolvePromise = client.query<{
           chainPubkey?: string;
           pubkey?: string;
           address?: string;
           identity?: { chainPubkey?: string };
         }>(resolveMethod, { identifier: tag });
 
-        const pubkey = (
-          resolved?.chainPubkey ||
-          resolved?.pubkey ||
-          resolved?.identity?.chainPubkey ||
-          resolved?.address ||
-          ""
-        )
-          .trim()
-          .toLowerCase()
-          .replace(/^0x/, "");
+        // Don't block the send path forever if Sphere resolve hangs.
+        const resolved = await Promise.race([
+          resolvePromise,
+          new Promise<null>((r) => window.setTimeout(() => r(null), 8_000)),
+        ]);
 
-        if (CHAIN_PUBKEY_RE.test(pubkey)) return pubkey;
+        if (resolved) {
+          const pubkey = (
+            resolved.chainPubkey ||
+            resolved.pubkey ||
+            resolved.identity?.chainPubkey ||
+            resolved.address ||
+            ""
+          )
+            .trim()
+            .toLowerCase()
+            .replace(/^0x/, "");
+
+          if (CHAIN_PUBKEY_RE.test(pubkey)) return pubkey;
+        }
       } catch {
         /* fall through — unbound tags stay as @nametag until claim */
       }
@@ -462,6 +470,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         `Issued At: ${new Date().toISOString()}`,
       ].join("\n");
 
+      let timer: number | undefined;
       try {
         const signPromise = handle.client.intent<{
           signature?: string;
@@ -469,7 +478,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }>(INTENT_ACTIONS.SIGN_MESSAGE, { message });
 
         const timed = new Promise<never>((_, reject) => {
-          window.setTimeout(() => {
+          timer = window.setTimeout(() => {
             reject(
               new ApiError(
                 "Sphere did not show a transfer confirmation. Keep the Sphere wallet window open (or install the Sphere extension), then try Send again.",
@@ -504,6 +513,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             : text || "Could not confirm NFT transfer in Sphere",
           { code, status: 400 },
         );
+      } finally {
+        if (timer !== undefined) window.clearTimeout(timer);
       }
     },
     [],

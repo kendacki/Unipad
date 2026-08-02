@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { m } from "framer-motion";
+import { normalizeSphereRecipient } from "@unipad/shared";
 import { api } from "@/lib/api";
 import {
   cachedMintsFor,
@@ -88,6 +89,7 @@ export default function WalletPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendingKey, setSendingKey] = useState<string | null>(null);
   const [recipientDraft, setRecipientDraft] = useState<Record<string, string>>({});
+  const sendingRef = useRef(false);
 
   const sessionPrincipal = useMemo(() => {
     const fromJwt = principalFromJwt(token);
@@ -99,6 +101,8 @@ export default function WalletPage() {
 
   const refresh = useCallback(async () => {
     if (!sessionPrincipal) return;
+    // Don't race a mid-flight Sphere confirm / ledger write with inventory reload.
+    if (sendingRef.current) return;
     setLoading(true);
     setLoadError(null);
 
@@ -186,12 +190,27 @@ export default function WalletPage() {
   }, [refresh]);
 
   async function sendToken(row: TokenRow) {
-    if (!token || !sessionPrincipal) return;
+    if (!token || !sessionPrincipal || sendingRef.current) return;
     const key = `${row.collectionId}:${row.tokenId}`;
     const toRaw = (recipientDraft[key] || "").trim();
     if (!toRaw) {
       toast.error(new Error("Enter a recipient @nametag or chain pubkey"));
       return;
+    }
+
+    // Cheap self-send guard before opening Sphere (full check runs after resolve).
+    try {
+      const tagged = normalizeSphereRecipient(toRaw);
+      if (sessionNametag && tagged === normalizeSphereRecipient(sessionNametag)) {
+        toast.error(new Error("Cannot send to yourself"));
+        return;
+      }
+      if (/^[0-9a-f]{66}$/i.test(toRaw) && toRaw.toLowerCase() === sessionPrincipal) {
+        toast.error(new Error("Cannot send to yourself"));
+        return;
+      }
+    } catch {
+      /* server will validate */
     }
 
     let confirmed: boolean | null = null;
@@ -202,6 +221,7 @@ export default function WalletPage() {
         confirmLabel: "Confirm in Sphere",
         cancelLabel: "Cancel",
         run: () => {
+          // Sync under this click — reopen/focus Sphere before any await.
           try {
             prepareSpherePaymentWindow();
           } catch {
@@ -212,17 +232,25 @@ export default function WalletPage() {
             "Confirm the transfer in the Sphere wallet window (or extension). Keep it open.",
           );
           return (async () => {
+            sendingRef.current = true;
             setSendingKey(key);
             try {
-              await ensureSphereForPayment();
-              const to = await resolveTransferRecipient(toRaw);
+              // 1) Reconnect under the gesture (same sequence as mint pay).
+              const sessionToken = await ensureSphereForPayment();
+              // 2) Ask for signature immediately while the wallet UI is live —
+              //    do not await nametag resolve first (that delayed the popup).
               await confirmNftTransfer({
                 collectionName: row.collectionName,
                 collectionId: row.collectionId,
                 tokenId: row.tokenId,
-                to,
+                to: toRaw,
               });
-              await api.transferToken(token, {
+              // 3) Resolve @tag → pubkey when possible, then move ledger ownership.
+              const to = await resolveTransferRecipient(toRaw);
+              if (/^[0-9a-f]{66}$/i.test(to) && to.toLowerCase() === sessionPrincipal) {
+                throw new Error("Cannot send to yourself");
+              }
+              await api.transferToken(sessionToken, {
                 collectionId: row.collectionId,
                 tokenId: row.tokenId,
                 to,
@@ -230,12 +258,14 @@ export default function WalletPage() {
               });
               return true;
             } finally {
+              sendingRef.current = false;
               setSendingKey(null);
             }
           })();
         },
       });
     } catch (e) {
+      sendingRef.current = false;
       setSendingKey(null);
       toast.error(e);
       return;
