@@ -16,6 +16,7 @@ import { ApiError } from "./errors";
 import { isSessionJwtExpired, paymentRefFromSendResult, POPUP_SESSION_KEY } from "./sphere";
 import {
   INTENT_ACTIONS,
+  RPC_METHODS,
   connectSphereWallet,
   describeConnectError,
   describePaymentError,
@@ -61,11 +62,28 @@ type WalletState = {
     memo: string;
     coinIdHex?: string;
   }) => Promise<string>;
+  /**
+   * Resolve @nametag → chain pubkey via Sphere (falls back to the raw recipient).
+   * Prefer calling after ensureSphereForPayment so the Connect client is live.
+   */
+  resolveTransferRecipient: (recipient: string) => Promise<string>;
+  /**
+   * Open Sphere and ask the user to sign an NFT-transfer confirmation.
+   * Must run under the same click gesture as prepareSpherePaymentWindow.
+   */
+  confirmNftTransfer: (params: {
+    collectionName: string;
+    collectionId: string;
+    tokenId: number;
+    to: string;
+  }) => Promise<{ signature: string; message: string }>;
 };
 
 const Ctx = createContext<WalletState | null>(null);
 const STORAGE_KEY = "unipad.session";
 const PAY_TIMEOUT_MS = 50_000;
+const SIGN_TIMEOUT_MS = 50_000;
+const CHAIN_PUBKEY_RE = /^[0-9a-f]{66}$/i;
 
 type Stored = {
   token: string;
@@ -368,6 +386,129 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const resolveTransferRecipient = useCallback(async (recipient: string) => {
+    const raw = recipient.trim();
+    if (!raw) {
+      throw new ApiError("Enter a recipient @nametag or chain pubkey", {
+        code: "UPAD_VALIDATION",
+        status: 400,
+      });
+    }
+    if (CHAIN_PUBKEY_RE.test(raw)) return raw.toLowerCase();
+
+    let tag: string;
+    try {
+      tag = normalizeSphereRecipient(raw);
+    } catch {
+      throw new ApiError("Recipient must be a @nametag or 66-char chain pubkey", {
+        code: "UPAD_VALIDATION",
+        status: 400,
+      });
+    }
+
+    const client = sphereRef.current?.client;
+    if (client && isSphereClientConnected(client)) {
+      try {
+        const resolveMethod =
+          (RPC_METHODS as Record<string, string>).RESOLVE || "sphere_resolve";
+        const resolved = await client.query<{
+          chainPubkey?: string;
+          pubkey?: string;
+          address?: string;
+          identity?: { chainPubkey?: string };
+        }>(resolveMethod, { identifier: tag });
+
+        const pubkey = (
+          resolved?.chainPubkey ||
+          resolved?.pubkey ||
+          resolved?.identity?.chainPubkey ||
+          resolved?.address ||
+          ""
+        )
+          .trim()
+          .toLowerCase()
+          .replace(/^0x/, "");
+
+        if (CHAIN_PUBKEY_RE.test(pubkey)) return pubkey;
+      } catch {
+        /* fall through — unbound tags stay as @nametag until claim */
+      }
+    }
+
+    return tag;
+  }, []);
+
+  const confirmNftTransfer = useCallback(
+    async (params: {
+      collectionName: string;
+      collectionId: string;
+      tokenId: number;
+      to: string;
+    }) => {
+      if (!sphereRef.current || !isSphereClientConnected(sphereRef.current.client)) {
+        throw new ApiError("Reconnect Sphere wallet to confirm this send", {
+          code: "UPAD_UNAUTHORIZED",
+          status: 401,
+        });
+      }
+      const handle = sphereRef.current;
+      const message = [
+        "Unipad NFT transfer",
+        "",
+        `Send: ${params.collectionName} #${params.tokenId}`,
+        `Collection: ${params.collectionId}`,
+        `To: ${params.to}`,
+        `Domain: ${typeof window !== "undefined" ? window.location.host : "unipad"}`,
+        `Issued At: ${new Date().toISOString()}`,
+      ].join("\n");
+
+      try {
+        const signPromise = handle.client.intent<{
+          signature?: string;
+          publicKey?: string;
+        }>(INTENT_ACTIONS.SIGN_MESSAGE, { message });
+
+        const timed = new Promise<never>((_, reject) => {
+          window.setTimeout(() => {
+            reject(
+              new ApiError(
+                "Sphere did not show a transfer confirmation. Keep the Sphere wallet window open (or install the Sphere extension), then try Send again.",
+                { code: "UPAD_PAYMENT_TIMEOUT", status: 408 },
+              ),
+            );
+          }, SIGN_TIMEOUT_MS);
+        });
+
+        const signed = await Promise.race([signPromise, timed]);
+        const signature = signed?.signature;
+        if (!signature) {
+          throw new ApiError("Sphere did not return a transfer signature", {
+            code: "UPAD_PAYMENT_FAILED",
+            status: 400,
+          });
+        }
+        return { signature, message };
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const text = describePaymentError(err);
+        const lower = text.toLowerCase();
+        const code =
+          lower.includes("reject") || lower.includes("denied") || lower.includes("cancel")
+            ? "UPAD_PAYMENT_REJECTED"
+            : lower.includes("confirmation") || lower.includes("timeout")
+              ? "UPAD_PAYMENT_TIMEOUT"
+              : "UPAD_PAYMENT_FAILED";
+        throw new ApiError(
+          lower.includes("reject")
+            ? "Transfer rejected in Sphere."
+            : text || "Could not confirm NFT transfer in Sphere",
+          { code, status: 400 },
+        );
+      }
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       token,
@@ -380,6 +521,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       ensureSphereForPayment,
       disconnect,
       payUct,
+      resolveTransferRecipient,
+      confirmNftTransfer,
     }),
     [
       token,
@@ -392,6 +535,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       ensureSphereForPayment,
       disconnect,
       payUct,
+      resolveTransferRecipient,
+      confirmNftTransfer,
     ],
   );
 

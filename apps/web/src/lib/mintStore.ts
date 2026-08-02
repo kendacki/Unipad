@@ -592,10 +592,23 @@ export async function claimNametagTokens(
   try {
     all = await listJsonUnder<StoredToken>("mints/tokens/");
   } catch {
-    return 0;
+    all = [];
+  }
+  try {
+    const tagged = await listJsonUnder<StoredToken>(
+      `mints/wallets/${encodeURIComponent(tag).slice(0, 120)}/`,
+    );
+    all = [...all, ...tagged];
+  } catch {
+    /* index scan is best-effort */
   }
 
+  const seen = new Set<string>();
   for (const token of all) {
+    const key = `${token.collectionId}:${token.tokenId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
     let storedTag: string;
     try {
       storedTag = normalizeSphereRecipient(token.ownerPrincipal);
@@ -1079,7 +1092,14 @@ export async function listWalletTokens(
   const owned: StoredToken[] = [];
   for (const t of byKey.values()) {
     // Canonical file is source of truth (wallet index may be stale after transfer).
-    const canonical = (await loadToken(t.collectionId, t.tokenId)) ?? t;
+    const canonical = await loadToken(t.collectionId, t.tokenId);
+    if (!canonical) {
+      // Blob read can flake — keep the indexed row rather than deleting ownership.
+      if (ownersMatch(t.ownerPrincipal, owner, nametag)) {
+        owned.push(t);
+      }
+      continue;
+    }
     if (!ownersMatch(canonical.ownerPrincipal, owner, nametag)) {
       // Drop stale sender index copies that still sit under this wallet prefix.
       if (
@@ -1161,6 +1181,8 @@ export async function transferToken(params: {
     return updated;
   }
 
+  // Canonical first, then recipient index — never clear the sender index until
+  // the recipient copy is durable (avoids NFTs vanishing into a missing index).
   await putJson(tokenPath(updated.collectionId, updated.tokenId), updated, {
     overwrite: true,
   });
@@ -1169,6 +1191,20 @@ export async function transferToken(params: {
     updated,
     { overwrite: true },
   );
+
+  // Confirm recipient index landed before clearing the sender — otherwise a failed
+  // index write + sender cleanup can make the mint disappear from every wallet.
+  const recipientIndex = await getJson<StoredToken>(
+    walletTokenPath(updated.ownerPrincipal, updated.collectionId, updated.tokenId),
+  );
+  if (!recipientIndex || recipientIndex.ownerPrincipal !== updated.ownerPrincipal) {
+    // Retry once
+    await putJson(
+      walletTokenPath(updated.ownerPrincipal, updated.collectionId, updated.tokenId),
+      updated,
+      { overwrite: true },
+    );
+  }
 
   // Always clear sender indexes (hex session + previous owner key / nametag key).
   const removeOwners = new Set<string>([previousOwner, from]);

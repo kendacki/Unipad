@@ -9,6 +9,7 @@ import {
   removeCachedMint,
   replaceCachedMintsFor,
 } from "@/lib/mintCache";
+import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { DROP_COVER_FALLBACKS } from "@/lib/media";
@@ -72,7 +73,16 @@ function formatMintedAt(iso: string) {
 
 export default function WalletPage() {
   const toast = useToast();
-  const { principal, displayName, token, connectSphere, connecting } = useWallet();
+  const {
+    principal,
+    displayName,
+    token,
+    connectSphere,
+    connecting,
+    ensureSphereForPayment,
+    resolveTransferRecipient,
+    confirmNftTransfer,
+  } = useWallet();
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -92,16 +102,15 @@ export default function WalletPage() {
     setLoading(true);
     setLoadError(null);
 
-    const remoteLists: TokenRow[][] = [];
-    let remoteOk = false;
+    let authTokens: TokenRow[] | null = null;
+    let publicTokens: TokenRow[] | null = null;
     let lastError: string | null = null;
 
     // Authenticated path claims @nametag transfers onto this hex wallet.
     if (token) {
       try {
         const r = await api.myTokens(token, sessionNametag);
-        remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
-        remoteOk = true;
+        authTokens = Array.isArray(r.tokens) ? r.tokens : [];
       } catch (e) {
         lastError = e instanceof Error ? e.message : "Could not load mints";
       }
@@ -109,16 +118,35 @@ export default function WalletPage() {
 
     try {
       const r = await api.walletTokens(sessionPrincipal, sessionNametag);
-      remoteLists.push(Array.isArray(r.tokens) ? r.tokens : []);
-      remoteOk = true;
+      publicTokens = Array.isArray(r.tokens) ? r.tokens : [];
     } catch (e) {
-      if (!remoteOk) {
+      if (!authTokens) {
         lastError = e instanceof Error ? e.message : "Could not load mints";
       }
     }
 
-    if (remoteOk) {
-      const remote = mergeRows(...remoteLists);
+    // Prefer authenticated inventory. Never wipe local cache from a failed/empty
+    // public-only response — that made sent/received mints look like they vanished.
+    if (authTokens) {
+      const remote = mergeRows(authTokens, publicTokens || []);
+      replaceCachedMintsFor(
+        sessionPrincipal,
+        remote.map((t) => ({
+          collectionId: t.collectionId,
+          collectionName: t.collectionName,
+          slug: t.slug,
+          coverUrl: t.coverUrl,
+          tokenId: t.tokenId,
+          mintTxRef: t.mintTxRef,
+          mintedAt: t.mintedAt,
+          ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
+        })),
+      );
+      setTokens(remote);
+      setLoadError(null);
+    } else if (publicTokens) {
+      const cached = cachedMintsFor(sessionPrincipal);
+      const remote = mergeRows(publicTokens, cached);
       replaceCachedMintsFor(
         sessionPrincipal,
         remote.map((t) => ({
@@ -160,32 +188,58 @@ export default function WalletPage() {
   async function sendToken(row: TokenRow) {
     if (!token || !sessionPrincipal) return;
     const key = `${row.collectionId}:${row.tokenId}`;
-    const to = (recipientDraft[key] || "").trim();
-    if (!to) {
+    const toRaw = (recipientDraft[key] || "").trim();
+    if (!toRaw) {
       toast.error(new Error("Enter a recipient @nametag or chain pubkey"));
       return;
     }
 
-    const confirmed = await toast.confirmAndRun({
-      title: `Send ${row.collectionName} #${row.tokenId}?`,
-      message: `This moves the mint to ${to}. It will leave your My mints list.`,
-      confirmLabel: "Send mint",
-      cancelLabel: "Cancel",
-      run: async () => {
-        setSendingKey(key);
-        try {
-          await api.transferToken(token, {
-            collectionId: row.collectionId,
-            tokenId: row.tokenId,
-            to,
-            nametag: sessionNametag,
-          });
-          return true;
-        } finally {
-          setSendingKey(null);
-        }
-      },
-    });
+    let confirmed: boolean | null = null;
+    try {
+      confirmed = await toast.confirmAndRun({
+        title: `Send ${row.collectionName} #${row.tokenId}?`,
+        message: `Approve in Sphere to send this mint to ${toRaw}. It will leave your My mints list after confirmation.`,
+        confirmLabel: "Confirm in Sphere",
+        cancelLabel: "Cancel",
+        run: () => {
+          try {
+            prepareSpherePaymentWindow();
+          } catch {
+            /* ensureSphereForPayment will surface a clear error */
+          }
+          toast.info(
+            "Approve in Sphere",
+            "Confirm the transfer in the Sphere wallet window (or extension). Keep it open.",
+          );
+          return (async () => {
+            setSendingKey(key);
+            try {
+              await ensureSphereForPayment();
+              const to = await resolveTransferRecipient(toRaw);
+              await confirmNftTransfer({
+                collectionName: row.collectionName,
+                collectionId: row.collectionId,
+                tokenId: row.tokenId,
+                to,
+              });
+              await api.transferToken(token, {
+                collectionId: row.collectionId,
+                tokenId: row.tokenId,
+                to,
+                nametag: sessionNametag,
+              });
+              return true;
+            } finally {
+              setSendingKey(null);
+            }
+          })();
+        },
+      });
+    } catch (e) {
+      setSendingKey(null);
+      toast.error(e);
+      return;
+    }
 
     if (!confirmed) return;
 
@@ -196,7 +250,7 @@ export default function WalletPage() {
         (t) => !(t.collectionId === row.collectionId && t.tokenId === row.tokenId),
       ),
     );
-    toast.success("Mint sent", `Transferred to ${to}.`);
+    toast.success("Mint sent", `Transferred to ${toRaw}.`);
     setRecipientDraft((prev) => {
       const next = { ...prev };
       delete next[key];
@@ -319,7 +373,7 @@ export default function WalletPage() {
                         disabled={busy || !(recipientDraft[key] || "").trim()}
                         onClick={() => void sendToken(t)}
                       >
-                        {busy ? "Sending…" : "Send"}
+                        {busy ? "Confirm in Sphere…" : "Send"}
                       </button>
                     </div>
                   </div>
