@@ -169,6 +169,23 @@ function ownersMatch(
   }
 }
 
+/** True when this wallet owns the row, including @nametag bound to their pubkey. */
+async function ownersMatchResolved(
+  storedOwner: string,
+  principal: string,
+  nametag?: string | null,
+): Promise<boolean> {
+  if (ownersMatch(storedOwner, principal, nametag)) return true;
+  const stored = storedOwner.trim();
+  if (!stored.startsWith("@")) return false;
+  try {
+    const bound = await resolveNametagToPubkey(stored);
+    return Boolean(bound && bound === normalizePrincipal(principal));
+  } catch {
+    return false;
+  }
+}
+
 function dedupeTokens(tokens: StoredToken[]): StoredToken[] {
   const map = new Map<string, StoredToken>();
   for (const t of tokens) {
@@ -524,7 +541,8 @@ async function removeWalletIndex(owner: string, collectionId: string, tokenId: n
     try {
       const { blobs } = await list({ prefix: pathname, limit: 10, token });
       for (const blob of blobs) {
-        if (blob.pathname === pathname || blob.pathname.startsWith(pathname)) {
+        // Exact path only — never startsWith(pathname) (can delete sibling indexes).
+        if (blob.pathname === pathname) {
           await del(blob.url, { token });
         }
       }
@@ -534,17 +552,28 @@ async function removeWalletIndex(owner: string, collectionId: string, tokenId: n
   }
 }
 
-/** Register Sphere nametag → chain pubkey so transfers can land on hex inventory. */
-export async function bindNametag(nametag: string, chainPubkey: string) {
+/** Register Sphere nametag → chain pubkey so transfers can land on hex inventory.
+ * Never steals an existing binding owned by a different pubkey.
+ */
+export async function bindNametag(nametag: string, chainPubkey: string): Promise<boolean> {
   const tag = normalizeSphereRecipient(nametag);
   const pubkey = normalizePrincipal(chainPubkey);
-  if (!tag.startsWith("@") || !CHAIN_PUBKEY_RE.test(pubkey)) return;
-  if (!useBlob()) return;
+  if (!tag.startsWith("@") || !CHAIN_PUBKEY_RE.test(pubkey)) return false;
+  if (!useBlob()) return false;
+
+  const existing = await getJson<{ chainPubkey?: string }>(nametagPath(tag));
+  const bound = existing?.chainPubkey?.trim().toLowerCase();
+  if (bound && CHAIN_PUBKEY_RE.test(bound) && bound !== pubkey) {
+    // Another wallet already owns this nametag binding — do not overwrite.
+    return false;
+  }
+
   await putJson(
     nametagPath(tag),
     { nametag: tag, chainPubkey: pubkey, updatedAt: new Date().toISOString() },
     { overwrite: true },
   );
+  return true;
 }
 
 async function resolveNametagToPubkey(nametag: string): Promise<string | null> {
@@ -575,7 +604,9 @@ async function resolveTransferOwner(to: string): Promise<string> {
   return resolved ?? to;
 }
 
-/** Move tokens still owned by @nametag onto this wallet’s hex principal. */
+/** Move tokens still owned by @nametag onto this wallet’s hex principal.
+ * Only claims when the nametag is unbound or already bound to this pubkey.
+ */
 export async function claimNametagTokens(
   chainPubkey: string,
   nametag: string | null | undefined,
@@ -585,7 +616,14 @@ export async function claimNametagTokens(
   if (!CHAIN_PUBKEY_RE.test(pubkey)) return 0;
 
   const tag = normalizeSphereRecipient(nametag);
-  await bindNametag(tag, pubkey);
+  const existingBound = await resolveNametagToPubkey(tag);
+  if (existingBound && existingBound !== pubkey) {
+    // Nametag belongs to someone else — never rewrite their inventory onto this wallet.
+    return 0;
+  }
+
+  const bound = await bindNametag(tag, pubkey);
+  if (!bound && existingBound !== pubkey) return 0;
 
   let claimed = 0;
   let all: StoredToken[] = [];
@@ -1033,20 +1071,17 @@ export async function getMintStatus(
   };
 }
 
+/**
+ * List mint inventory for a wallet.
+ * Read-only: does not claim nametags or delete indexes (those run only on
+ * authenticated claim / explicit transfer). Listing must never erase ownership.
+ */
 export async function listWalletTokens(
   principal: string,
   opts?: { nametag?: string | null; forceScan?: boolean },
 ): Promise<StoredToken[]> {
   const owner = normalizePrincipal(principal);
   const nametag = opts?.nametag?.trim() || null;
-
-  if (nametag && useBlob() && CHAIN_PUBKEY_RE.test(owner)) {
-    try {
-      await claimNametagTokens(owner, nametag);
-    } catch {
-      /* claim is best-effort before list */
-    }
-  }
 
   if (!useBlob()) {
     return dedupeTokens(
@@ -1068,20 +1103,30 @@ export async function listWalletTokens(
   }
 
   let indexed: StoredToken[] = [];
+  let indexScanOk = false;
   for (const prefix of prefixes) {
     try {
       indexed = indexed.concat(await listJsonUnder<StoredToken>(prefix));
+      indexScanOk = true;
     } catch {
       /* continue */
     }
   }
 
-  // Always include a full token-file scan so stale wallet indexes can't hide transfers.
+  // Full token-file scan so a missing/stale wallet index cannot hide owned mints.
   let all: StoredToken[] = [];
+  let fullScanOk = false;
   try {
     all = await listJsonUnder<StoredToken>("mints/tokens/");
+    fullScanOk = true;
   } catch {
     all = [];
+  }
+
+  // Both scans failed — surface empty would look like a wipe; prefer indexed-only
+  // we already have (possibly empty) rather than throwing from this layer.
+  if (!indexScanOk && !fullScanOk) {
+    return [];
   }
 
   const byKey = new Map<string, StoredToken>();
@@ -1094,21 +1139,15 @@ export async function listWalletTokens(
     // Canonical file is source of truth (wallet index may be stale after transfer).
     const canonical = await loadToken(t.collectionId, t.tokenId);
     if (!canonical) {
-      // Blob read can flake — keep the indexed row rather than deleting ownership.
-      if (ownersMatch(t.ownerPrincipal, owner, nametag)) {
+      // Blob read can flake — keep the indexed row rather than dropping ownership.
+      if (await ownersMatchResolved(t.ownerPrincipal, owner, nametag)) {
         owned.push(t);
       }
       continue;
     }
-    if (!ownersMatch(canonical.ownerPrincipal, owner, nametag)) {
-      // Drop stale sender index copies that still sit under this wallet prefix.
-      if (
-        indexed.some(
-          (i) => i.collectionId === t.collectionId && i.tokenId === t.tokenId,
-        )
-      ) {
-        await removeWalletIndex(owner, t.collectionId, t.tokenId);
-      }
+    if (!(await ownersMatchResolved(canonical.ownerPrincipal, owner, nametag))) {
+      // Stale index under this wallet — skip only. Never delete on list;
+      // transferToken clears sender indexes after a confirmed move.
       continue;
     }
     owned.push(canonical);
@@ -1118,6 +1157,17 @@ export async function listWalletTokens(
         canonical,
         { overwrite: true },
       );
+      // Also keep a hex wallet index when ownership is still a bound @nametag.
+      if (
+        !CHAIN_PUBKEY_RE.test(canonical.ownerPrincipal) &&
+        CHAIN_PUBKEY_RE.test(owner)
+      ) {
+        await putJson(
+          walletTokenPath(owner, canonical.collectionId, canonical.tokenId),
+          canonical,
+          { overwrite: true },
+        );
+      }
     } catch {
       /* best-effort index repair */
     }

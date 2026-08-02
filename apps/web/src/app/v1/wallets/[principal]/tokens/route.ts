@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ principal: string }> };
 
-/** Wallet mint inventory from the serverless mint ledger. */
+/**
+ * Public read of wallet mint inventory.
+ * Never claims nametags or mutates bindings — that only happens on authenticated /v1/me/tokens.
+ */
 export async function GET(request: Request, ctx: Ctx) {
   const { principal } = await ctx.params;
   if (!principal) {
@@ -15,8 +18,12 @@ export async function GET(request: Request, ctx: Ctx) {
       { status: 400 },
     );
   }
+  // nametag is display-only for matching pending @tag-owned rows — never triggers claim.
   const nametag = new URL(request.url).searchParams.get("nametag");
-  const tokens = await listWalletTokens(decodeURIComponent(principal), { nametag });
+  const tokens = await listWalletTokens(decodeURIComponent(principal), {
+    nametag,
+    forceScan: true,
+  });
   return NextResponse.json(
     {
       tokens: tokens.map((t) => ({

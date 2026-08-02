@@ -129,42 +129,53 @@ export default function WalletPage() {
       }
     }
 
-    // Prefer authenticated inventory. Never wipe local cache from a failed/empty
-    // public-only response — that made sent/received mints look like they vanished.
+    // Prefer authenticated inventory. Never wipe local cache when remote comes
+    // back empty — Blob list flakes were making owned mints look deleted.
     if (authTokens) {
+      const cached = cachedMintsFor(sessionPrincipal);
       const remote = mergeRows(authTokens, publicTokens || []);
-      replaceCachedMintsFor(
-        sessionPrincipal,
-        remote.map((t) => ({
-          collectionId: t.collectionId,
-          collectionName: t.collectionName,
-          slug: t.slug,
-          coverUrl: t.coverUrl,
-          tokenId: t.tokenId,
-          mintTxRef: t.mintTxRef,
-          mintedAt: t.mintedAt,
-          ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
-        })),
-      );
-      setTokens(remote);
-      setLoadError(null);
+      if (remote.length === 0 && cached.length > 0) {
+        setTokens(cached);
+        setLoadError("Could not refresh mints — showing your last known inventory.");
+      } else {
+        replaceCachedMintsFor(
+          sessionPrincipal,
+          remote.map((t) => ({
+            collectionId: t.collectionId,
+            collectionName: t.collectionName,
+            slug: t.slug,
+            coverUrl: t.coverUrl,
+            tokenId: t.tokenId,
+            mintTxRef: t.mintTxRef,
+            mintedAt: t.mintedAt,
+            ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
+          })),
+        );
+        setTokens(remote);
+        setLoadError(null);
+      }
     } else if (publicTokens) {
       const cached = cachedMintsFor(sessionPrincipal);
-      const remote = mergeRows(publicTokens, cached);
-      replaceCachedMintsFor(
-        sessionPrincipal,
-        remote.map((t) => ({
-          collectionId: t.collectionId,
-          collectionName: t.collectionName,
-          slug: t.slug,
-          coverUrl: t.coverUrl,
-          tokenId: t.tokenId,
-          mintTxRef: t.mintTxRef,
-          mintedAt: t.mintedAt,
-          ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
-        })),
-      );
-      setTokens(remote);
+      if (publicTokens.length === 0 && cached.length > 0) {
+        setTokens(cached);
+        setLoadError("Could not refresh mints — showing your last known inventory.");
+      } else {
+        const remote = mergeRows(publicTokens, cached);
+        replaceCachedMintsFor(
+          sessionPrincipal,
+          remote.map((t) => ({
+            collectionId: t.collectionId,
+            collectionName: t.collectionName,
+            slug: t.slug,
+            coverUrl: t.coverUrl,
+            tokenId: t.tokenId,
+            mintTxRef: t.mintTxRef,
+            mintedAt: t.mintedAt,
+            ownerPrincipal: t.ownerPrincipal || sessionPrincipal,
+          })),
+        );
+        setTokens(remote);
+      }
     } else {
       setTokens(cachedMintsFor(sessionPrincipal));
       if (lastError) setLoadError(lastError);

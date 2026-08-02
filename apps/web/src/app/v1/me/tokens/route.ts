@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Authenticated mint inventory for the connected wallet.
- * Binds Sphere nametag → pubkey and claims any tokens sent to that @nametag.
+ * Claims tokens sent to this wallet's Sphere @nametag onto the session pubkey.
+ * Will not steal a nametag already bound to a different pubkey.
  */
 export async function GET(request: Request) {
   try {
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
 
     if (nametag) {
       try {
+        // bindNametag refuses to overwrite another wallet's binding.
         await bindNametag(nametag, session.principal);
         await claimNametagTokens(session.principal, nametag);
       } catch (err) {
