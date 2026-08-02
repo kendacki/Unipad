@@ -25,8 +25,18 @@ export type StoredListing = Collection & {
   updatedAt: string;
 };
 
+type PublicRegistryEntry = Collection & { updatedAt: string };
+
+type PublicRegistry = {
+  updatedAt: string;
+  /** id → public Collection snapshot (non-draft only). */
+  byId: Record<string, PublicRegistryEntry>;
+};
+
 type MemoryDb = {
   byId: Map<string, StoredListing>;
+  /** Published (non-draft) snapshots — survives stale CDN reads of collection JSON. */
+  publicById: Map<string, PublicRegistryEntry>;
 };
 
 declare global {
@@ -36,7 +46,14 @@ declare global {
 
 function memory(): MemoryDb {
   if (!globalThis.__unipadListingsMemory) {
-    globalThis.__unipadListingsMemory = { byId: new Map() };
+    globalThis.__unipadListingsMemory = {
+      byId: new Map(),
+      publicById: new Map(),
+    };
+  }
+  // Older hot-reload shapes may lack publicById.
+  if (!globalThis.__unipadListingsMemory.publicById) {
+    globalThis.__unipadListingsMemory.publicById = new Map();
   }
   return globalThis.__unipadListingsMemory;
 }
@@ -74,8 +91,16 @@ function slugPath(slug: string) {
 }
 
 function creatorIndexPath(principal: string, id: string) {
-  const safe = encodeURIComponent(principal.trim().toLowerCase()).slice(0, 120);
+  const safe = encodeURIComponent(normalizePrincipalKey(principal)).slice(0, 120);
   return `listings/creators/${safe}/${id}.json`;
+}
+
+function publicRegistryPath() {
+  return "listings/public-registry.json";
+}
+
+function normalizePrincipalKey(principal: string): string {
+  return principal.trim().toLowerCase().replace(/^0x/, "");
 }
 
 async function putJson(pathname: string, data: unknown) {
@@ -189,25 +214,89 @@ function toPublic(listing: StoredListing): Collection {
   return collection;
 }
 
+function toRegistryEntry(listing: StoredListing): PublicRegistryEntry {
+  return { ...toPublic(listing), updatedAt: listing.updatedAt };
+}
+
+async function loadPublicRegistry(): Promise<PublicRegistry> {
+  if (!useBlob()) {
+    const byId: Record<string, PublicRegistryEntry> = {};
+    for (const [id, c] of memory().publicById) byId[id] = c;
+    return { updatedAt: new Date().toISOString(), byId };
+  }
+  const fromBlob = await getJson<PublicRegistry>(publicRegistryPath());
+  const byId: Record<string, PublicRegistryEntry> = { ...(fromBlob?.byId ?? {}) };
+  // In-process publish wins over stale CDN registry bodies.
+  for (const [id, c] of memory().publicById) {
+    const existing = byId[id];
+    if (!existing || (c.updatedAt || "") >= (existing.updatedAt || "")) {
+      byId[id] = c;
+    }
+  }
+  return { updatedAt: fromBlob?.updatedAt || new Date().toISOString(), byId };
+}
+
+async function writePublicRegistry(byId: Record<string, PublicRegistryEntry>) {
+  const registry: PublicRegistry = {
+    updatedAt: new Date().toISOString(),
+    byId,
+  };
+  memory().publicById = new Map(Object.entries(byId));
+  if (!useBlob()) return;
+  await putJson(publicRegistryPath(), registry);
+}
+
+async function syncPublicRegistry(listing: StoredListing) {
+  const pub = toRegistryEntry(refreshListing(listing));
+  const registry = await loadPublicRegistry();
+  if (pub.status === "draft") {
+    delete registry.byId[pub.id];
+    memory().publicById.delete(pub.id);
+  } else {
+    registry.byId[pub.id] = pub;
+    memory().publicById.set(pub.id, pub);
+  }
+  await writePublicRegistry(registry.byId);
+}
+
 async function saveListing(listing: StoredListing) {
   // Always mirror in-process so publish → list on the same instance is instant.
   memory().byId.set(listing.id, listing);
+  if (listing.status !== "draft") {
+    memory().publicById.set(listing.id, toRegistryEntry(listing));
+  } else {
+    memory().publicById.delete(listing.id);
+  }
   if (!useBlob()) return;
   await putJson(collectionPath(listing.id), listing);
   await putJson(slugPath(listing.slug), { id: listing.id });
   await putJson(creatorIndexPath(listing.creatorPrincipal, listing.id), {
     id: listing.id,
+    status: listing.status,
+    slug: listing.slug,
+    updatedAt: listing.updatedAt,
   });
+  // Durable non-draft index — storefront reads this when collection CDN is stale.
+  await syncPublicRegistry(listing);
 }
 
 async function loadListingById(id: string): Promise<StoredListing | null> {
-  if (!useBlob()) return memory().byId.get(id) ?? null;
+  const mem = memory().byId.get(id) ?? null;
+  if (!useBlob()) return mem;
   const fromBlob = await getJson<StoredListing>(collectionPath(id));
   if (fromBlob) {
+    // Stale CDN can still serve the pre-publish draft — prefer fresher memory / live.
+    if (
+      mem &&
+      ((mem.updatedAt || "") >= (fromBlob.updatedAt || "") ||
+        (fromBlob.status === "draft" && mem.status !== "draft"))
+    ) {
+      return mem;
+    }
     memory().byId.set(fromBlob.id, fromBlob);
     return fromBlob;
   }
-  return memory().byId.get(id) ?? null;
+  return mem;
 }
 
 async function loadAllListings(): Promise<StoredListing[]> {
@@ -219,7 +308,14 @@ async function loadAllListings(): Promise<StoredListing[]> {
   }
   // Prefer in-process writes (e.g. just-published) over potentially stale Blob CDN reads.
   for (const [id, listing] of memory().byId) {
-    byId.set(id, listing);
+    const existing = byId.get(id);
+    if (
+      !existing ||
+      (listing.updatedAt || "") >= (existing.updatedAt || "") ||
+      (existing.status === "draft" && listing.status !== "draft")
+    ) {
+      byId.set(id, listing);
+    }
   }
   return [...byId.values()];
 }
@@ -298,7 +394,7 @@ export async function createListing(
     slug,
     name,
     description: (input.description ?? "").slice(0, 2000),
-    creatorPrincipal: principal.trim().toLowerCase(),
+    creatorPrincipal: normalizePrincipalKey(principal),
     creatorDisplayName:
       input.creatorDisplayName?.trim().slice(0, 80) || creatorDisplayName(principal),
     coverUrl: input.coverUrl?.trim() || null,
@@ -320,10 +416,44 @@ export async function createListing(
 }
 
 export async function listCreatorListings(principal: string): Promise<Collection[]> {
-  const all = await loadAllListings();
-  const key = principal.trim().toLowerCase();
-  return all
-    .filter((l) => l.creatorPrincipal.trim().toLowerCase() === key)
+  const key = normalizePrincipalKey(principal);
+  const byId = new Map<string, StoredListing>();
+
+  // Prefer creator index (avoids missing rows when the global collection list lags).
+  if (useBlob()) {
+    try {
+      const prefix = `listings/creators/${encodeURIComponent(key).slice(0, 120)}/`;
+      const indexRows = await listJsonUnder<{ id?: string }>(prefix);
+      for (const row of indexRows) {
+        if (!row?.id) continue;
+        const listing = await loadListingById(row.id);
+        if (listing) byId.set(listing.id, listing);
+      }
+    } catch {
+      /* fall through to full scan */
+    }
+  }
+
+  for (const listing of await loadAllListings()) {
+    if (normalizePrincipalKey(listing.creatorPrincipal) === key) {
+      const existing = byId.get(listing.id);
+      if (
+        !existing ||
+        (listing.updatedAt || "") >= (existing.updatedAt || "") ||
+        (existing.status === "draft" && listing.status !== "draft")
+      ) {
+        byId.set(listing.id, listing);
+      }
+    }
+  }
+
+  for (const listing of memory().byId.values()) {
+    if (normalizePrincipalKey(listing.creatorPrincipal) === key) {
+      byId.set(listing.id, listing);
+    }
+  }
+
+  return [...byId.values()]
     .map((l) => toPublic(refreshListing(l)))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -353,26 +483,123 @@ export async function getStoredListing(idOrSlug: string): Promise<StoredListing 
           l.slug.toLowerCase() === key.toLowerCase(),
       ) ?? null;
   }
+  // Public registry can still expose a published snapshot when collection CDN is draft/stale.
+  if (!listing || listing.status === "draft") {
+    const registry = await loadPublicRegistry();
+    const snap =
+      (listing && registry.byId[listing.id]) ||
+      registry.byId[key] ||
+      Object.values(registry.byId).find(
+        (c) => c.slug === key || c.slug.toLowerCase() === key.toLowerCase(),
+      );
+    if (snap && snap.status !== "draft") {
+      const merged: StoredListing = {
+        ...(listing ?? (snap as StoredListing)),
+        ...snap,
+        allowlist: listing?.allowlist ?? [],
+        updatedAt: snap.updatedAt || listing?.updatedAt || new Date().toISOString(),
+      };
+      memory().byId.set(merged.id, merged);
+      return refreshListing(merged, true);
+    }
+  }
   return listing ? refreshListing(listing, true) : null;
 }
 
 /** Seed catalog + published creator listings (excludes drafts). */
 export async function listPublicCollections(status?: string | null): Promise<Collection[]> {
   const seed = listCatalogCollections(status === "draft" ? "all" : status);
-  const listed = (await loadAllListings()).map((l) => refreshListing(l, true));
+  const listed: StoredListing[] = (await loadAllListings()).map((l) => refreshListing(l, true));
+  const registry = await loadPublicRegistry();
 
-  const publicListed = listed
-    .filter((c) => c.status !== "draft")
-    .filter((c) => !status || status === "all" || c.status === status)
-    .map(toPublic);
+  // Recover publishes whose collection JSON is still a stale draft on CDN but
+  // whose creator-index / registry row already says live|scheduled|sold_out.
+  if (useBlob()) {
+    try {
+      const pointers = await listJsonUnder<{
+        id?: string;
+        status?: string;
+        slug?: string;
+        updatedAt?: string;
+      }>("listings/creators/");
+      for (const ptr of pointers) {
+        if (!ptr?.id || !ptr.status || ptr.status === "draft") continue;
+        const existingIdx = listed.findIndex((l) => l.id === ptr.id);
+        const existing = existingIdx >= 0 ? listed[existingIdx] : null;
+        if (existing && existing.status !== "draft") continue;
+        const body = existing ?? (await loadListingById(ptr.id));
+        if (!body) continue;
+        const recovered: StoredListing = {
+          ...body,
+          status: ptr.status as CollectionStatus,
+          updatedAt: ptr.updatedAt || body.updatedAt,
+        };
+        const refreshed = refreshListing(recovered);
+        if (existingIdx >= 0) listed[existingIdx] = refreshed;
+        else listed.push(refreshed);
+        registry.byId[recovered.id] = toRegistryEntry(recovered);
+        memory().byId.set(recovered.id, recovered);
+        memory().publicById.set(recovered.id, toRegistryEntry(recovered));
+      }
+    } catch {
+      /* best-effort recovery */
+    }
+  }
+
+  const byId = new Map<string, Collection>();
+  for (const c of seed) byId.set(c.id, c);
+
+  let registryDirty = false;
+  for (const listing of listed) {
+    // A draft that already has mints was published before — never hide it as unpublished.
+    if (
+      listing.status === "draft" &&
+      (listing.mintedCount > 0 || listing.remainingSupply < listing.totalSupply)
+    ) {
+      listing.status = listing.remainingSupply <= 0 ? "sold_out" : "live";
+      listing.updatedAt = new Date().toISOString();
+      memory().byId.set(listing.id, listing);
+      memory().publicById.set(listing.id, toRegistryEntry(listing));
+      registry.byId[listing.id] = toRegistryEntry(listing);
+      registryDirty = true;
+      void saveListing(listing).catch(() => undefined);
+    }
+  }
+
+  for (const listing of listed) {
+    if (listing.status === "draft") continue;
+    if (status && status !== "all" && listing.status !== status) continue;
+    byId.set(listing.id, toPublic(listing));
+    const snap = registry.byId[listing.id];
+    if (!snap || (listing.updatedAt || "") > (snap.updatedAt || "")) {
+      registry.byId[listing.id] = toRegistryEntry(listing);
+      registryDirty = true;
+    }
+  }
+
+  // Registry snapshots fill gaps when collection JSON is still a stale draft on CDN.
+  for (const snap of Object.values(registry.byId)) {
+    if (!snap?.id || snap.status === "draft") continue;
+    if (status && status !== "all" && snap.status !== status) continue;
+    const existing = byId.get(snap.id);
+    if (
+      !existing ||
+      existing.status === "draft" ||
+      (snap.updatedAt || "") >= ((existing as PublicRegistryEntry).updatedAt || "")
+    ) {
+      const { updatedAt: _u, ...pub } = snap;
+      byId.set(snap.id, pub);
+    }
+  }
+
+  if (registryDirty) {
+    void writePublicRegistry(registry.byId).catch(() => undefined);
+  }
 
   if (status === "draft") {
     return listed.filter((c) => c.status === "draft").map(toPublic);
   }
 
-  const byId = new Map<string, Collection>();
-  for (const c of seed) byId.set(c.id, c);
-  for (const c of publicListed) byId.set(c.id, c);
   return [...byId.values()];
 }
 
@@ -385,8 +612,8 @@ export async function getResolvedCollection(
   const listed = await getStoredListing(idOrSlug);
   if (!listed) return null;
   if (listed.status === "draft") {
-    const viewer = viewerPrincipal?.trim().toLowerCase();
-    const owner = listed.creatorPrincipal.trim().toLowerCase();
+    const viewer = viewerPrincipal ? normalizePrincipalKey(viewerPrincipal) : "";
+    const owner = normalizePrincipalKey(listed.creatorPrincipal);
     // Creators may preview their own unpublished draft.
     if (viewer && viewer === owner) return toPublic(listed);
     return null;
@@ -397,7 +624,10 @@ export async function getResolvedCollection(
 export async function publishListing(principal: string, idOrSlug: string): Promise<Collection> {
   assertPersistentStore();
   const listing = await getStoredListing(idOrSlug);
-  if (!listing || listing.creatorPrincipal.trim().toLowerCase() !== principal.trim().toLowerCase()) {
+  if (
+    !listing ||
+    normalizePrincipalKey(listing.creatorPrincipal) !== normalizePrincipalKey(principal)
+  ) {
     throw new ListingHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
   }
   if (listing.status !== "draft" && listing.status !== "scheduled") {

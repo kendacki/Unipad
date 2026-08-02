@@ -50,6 +50,23 @@ export function DropGrid({
   const collections = controlled ? collectionsProp : collectionsLocal;
   const error = controlled ? (errorProp ?? null) : errorLocal;
 
+  // If a highlighted drop isn't on Live (sold out / upcoming), switch to All so it stays visible.
+  useEffect(() => {
+    if (!highlightSlug || !collections?.length || !filterable) return;
+    const target = collections.find(
+      (c) =>
+        c.slug.toLowerCase() === highlightSlug.toLowerCase() ||
+        c.id.toLowerCase() === highlightSlug.toLowerCase(),
+    );
+    if (!target) {
+      if (filter !== "all") setFilter("all");
+      return;
+    }
+    if (filter === "mintable" && !isMintable(target)) {
+      setFilter(target.status === "scheduled" ? "upcoming" : "all");
+    }
+  }, [highlightSlug, collections, filterable, filter]);
+
   useEffect(() => {
     if (controlled) return;
     let cancelled = false;

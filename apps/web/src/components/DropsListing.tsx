@@ -15,7 +15,7 @@ import {
   collectionStatusLabel,
   type DropFilter,
 } from "@/lib/drops";
-import { takePublishedDropStash } from "@/lib/launchCheckpoint";
+import { takePublishedDropStash, clearPublishedDropStashIfPresent, peekPublishedDropStash } from "@/lib/launchCheckpoint";
 import { isTrendingCatalogDrop } from "@/lib/catalog";
 import { DropGrid } from "@/components/DropGrid";
 import { fadeUp, springSnappy } from "@/lib/motion";
@@ -53,7 +53,7 @@ export function DropsListing() {
 
   useEffect(() => {
     let cancelled = false;
-    const stashed = takePublishedDropStash();
+    const stashed = peekPublishedDropStash() || takePublishedDropStash();
 
     if (stashed) {
       setCollections(sortForStorefront([stashed]));
@@ -66,7 +66,9 @@ export function DropsListing() {
         const byId = new Map(r.collections.map((c) => [c.id, c]));
         // Overlay the just-published drop so Live/Upcoming updates without a hard refresh.
         if (stashed) byId.set(stashed.id, stashed);
-        setCollections(sortForStorefront([...byId.values()]));
+        const merged = sortForStorefront([...byId.values()]);
+        setCollections(merged);
+        clearPublishedDropStashIfPresent(r.collections);
       })
       .catch((e) => {
         if (!cancelled) setError(e.message);
