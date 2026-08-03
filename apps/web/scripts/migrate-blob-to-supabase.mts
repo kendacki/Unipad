@@ -6,11 +6,36 @@
  *
  * Safe to re-run (upserts by pathname). Does not delete Blob data.
  */
-import { list } from "@vercel/blob";
+import { get, list } from "@vercel/blob";
 import { createClient } from "@supabase/supabase-js";
 
 const TABLE = process.env.SUPABASE_OBJECTS_TABLE?.trim() || "unipad_objects";
 const PREFIXES = ["listings/", "mints/", "earnings/", "covers/"];
+
+async function readBlobJson(pathname: string, url: string, token: string): Promise<unknown> {
+  // Prefer authenticated SDK get — public CDN fetch often 403 when the store is full/suspended.
+  try {
+    const result = await get(pathname, { access: "public", token });
+    if (result?.statusCode === 200 && result.stream) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of result.stream as AsyncIterable<Uint8Array>) {
+        chunks.push(Buffer.from(chunk));
+      }
+      return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    }
+  } catch {
+    /* fall through */
+  }
+
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(`fetch ${pathname} → ${res.status}`);
+  }
+  return res.json();
+}
 
 async function main() {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN?.trim();
@@ -42,13 +67,7 @@ async function main() {
           continue;
         }
         try {
-          const res = await fetch(blob.url, { cache: "no-store" });
-          if (!res.ok) {
-            failed += 1;
-            console.error("fetch fail", blob.pathname, res.status);
-            continue;
-          }
-          const body = await res.json();
+          const body = await readBlobJson(blob.pathname, blob.url, blobToken);
           const { error } = await supabase.from(TABLE).upsert(
             {
               pathname: blob.pathname,
@@ -62,11 +81,11 @@ async function main() {
             console.error("upsert fail", blob.pathname, error.message);
           } else {
             copied += 1;
-            if (copied % 25 === 0) console.log(`… ${copied} objects`);
+            if (copied % 10 === 0) console.log(`… ${copied} objects`);
           }
         } catch (e) {
           failed += 1;
-          console.error("error", blob.pathname, e);
+          console.error("error", blob.pathname, e instanceof Error ? e.message : e);
         }
       }
       cursor = page.hasMore ? page.cursor : undefined;
