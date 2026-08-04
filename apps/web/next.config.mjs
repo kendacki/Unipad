@@ -43,6 +43,13 @@ const nextConfig = {
       { protocol: "https", hostname: "ipfs.io" },
       { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
       { protocol: "https", hostname: "*.blob.vercel-storage.com" },
+      // Creator-uploaded covers (Supabase Storage public bucket)
+      { protocol: "https", hostname: "*.supabase.co", pathname: "/storage/v1/object/public/**" },
+      {
+        protocol: "https",
+        hostname: "sjlnzbxapfhdwfdzyybi.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
   experimental: {

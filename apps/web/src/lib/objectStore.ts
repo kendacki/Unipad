@@ -292,8 +292,22 @@ export async function uploadMediaFile(input: {
   bytes: ArrayBuffer | Buffer | Uint8Array;
   contentType: string;
 }): Promise<{ pathname: string; url: string }> {
-  const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "cover";
-  const pathname = `covers/${Date.now()}-${safeName}`;
+  const extFromName = input.filename.includes(".")
+    ? input.filename.slice(input.filename.lastIndexOf(".")).toLowerCase()
+    : "";
+  const extFromType =
+    input.contentType === "image/png"
+      ? ".png"
+      : input.contentType === "image/webp"
+        ? ".webp"
+        : input.contentType === "image/gif"
+          ? ".gif"
+          : input.contentType === "image/jpeg"
+            ? ".jpg"
+            : "";
+  const ext = /^\.(png|jpe?g|webp|gif)$/i.test(extFromName) ? extFromName : extFromType || ".jpg";
+  // Keep object keys URL-safe (no spaces) so mint/detail Image tags load reliably.
+  const pathname = `covers/${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
 
   const body =
     input.bytes instanceof Buffer
@@ -306,13 +320,17 @@ export async function uploadMediaFile(input: {
     const { error } = await client.storage.from(MEDIA_BUCKET).upload(pathname, body, {
       contentType: input.contentType || "application/octet-stream",
       upsert: true,
-      cacheControl: "3600",
+      cacheControl: "31536000",
     });
     if (error) {
       throw new Error(`Supabase media upload failed: ${error.message}`);
     }
     const { data } = client.storage.from(MEDIA_BUCKET).getPublicUrl(pathname);
-    return { pathname, url: data.publicUrl };
+    const url = data.publicUrl?.trim();
+    if (!url?.startsWith("https://")) {
+      throw new Error("Supabase media upload returned an invalid public URL");
+    }
+    return { pathname, url };
   }
 
   if (!usesBlobStore()) {

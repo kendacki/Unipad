@@ -38,3 +38,21 @@ export const MEDIA_3D = {
 
 /** Ten unique HD covers for See all / wallet / detail fallbacks */
 export const DROP_COVER_FALLBACKS = COVER_IDS.map((id) => u(id, coverQ));
+
+/** Unsplash can go through the Next image optimizer; uploaded covers should not. */
+export function isOptimizableCoverUrl(url: string): boolean {
+  try {
+    return new URL(url).hostname === "images.unsplash.com";
+  } catch {
+    return false;
+  }
+}
+
+/** Prefer creator cover; fall back to curated art. */
+export function resolveCoverUrl(
+  url: string | null | undefined,
+  fallback: string,
+): string {
+  const trimmed = url?.trim();
+  return trimmed || fallback;
+}

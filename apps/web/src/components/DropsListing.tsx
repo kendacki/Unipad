@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import type { Collection } from "@unipad/shared";
 import { api } from "@/lib/api";
-import { DROP_COVER_FALLBACKS } from "@/lib/media";
+import { DROP_COVER_FALLBACKS, isOptimizableCoverUrl, resolveCoverUrl } from "@/lib/media";
 import {
   dropPriceLabel,
   isMintable,
@@ -24,13 +24,15 @@ const FEATURED_COUNT = 3;
 const SLIDE_MS = 3000;
 
 function landscapeCover(url: string) {
-  if (!url.includes("images.unsplash.com")) return url;
+  if (!isOptimizableCoverUrl(url)) return url;
   const base = url.split("?")[0];
   return `${base}?auto=format&fit=crop&w=1600&h=900&q=85`;
 }
 
 function coverFor(c: Collection, index: number) {
-  return landscapeCover(c.coverUrl || DROP_COVER_FALLBACKS[index % DROP_COVER_FALLBACKS.length]);
+  return landscapeCover(
+    resolveCoverUrl(c.coverUrl, DROP_COVER_FALLBACKS[index % DROP_COVER_FALLBACKS.length]),
+  );
 }
 
 function viewToFilter(view: string | null): DropFilter {
@@ -163,7 +165,7 @@ export function DropsListing() {
                         priority={i === 0}
                         sizes="(max-width: 860px) 100vw, 640px"
                         style={{ objectFit: "cover", objectPosition: "center" }}
-                        unoptimized={!coverFor(drop, i).includes("images.unsplash.com")}
+                        unoptimized={!isOptimizableCoverUrl(coverFor(drop, i))}
                       />
                     </div>
 

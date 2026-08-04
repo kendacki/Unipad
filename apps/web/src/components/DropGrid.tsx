@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, m } from "framer-motion";
 import type { Collection } from "@unipad/shared";
 import { api } from "@/lib/api";
-import { DROP_COVER_FALLBACKS } from "@/lib/media";
+import { DROP_COVER_FALLBACKS, isOptimizableCoverUrl, resolveCoverUrl } from "@/lib/media";
 import {
   dropPriceLabel,
   isMintable,
@@ -192,7 +192,10 @@ export function DropGrid({
             animate="show"
           >
             {visible.map((c, i) => {
-              const cover = c.coverUrl || DROP_COVER_FALLBACKS[i % DROP_COVER_FALLBACKS.length];
+              const cover = resolveCoverUrl(
+                c.coverUrl,
+                DROP_COVER_FALLBACKS[i % DROP_COVER_FALLBACKS.length],
+              );
               const mintedPct = Math.min(
                 100,
                 Math.round((c.mintedCount / Math.max(1, c.totalSupply)) * 100),
@@ -215,7 +218,8 @@ export function DropGrid({
                         fill
                         sizes="(max-width: 640px) 100vw, (max-width: 1100px) 50vw, 360px"
                         loading={i < 3 ? "eager" : "lazy"}
-                        unoptimized={!cover.includes("images.unsplash.com")}
+                        style={{ objectFit: "cover", objectPosition: "center" }}
+                        unoptimized={!isOptimizableCoverUrl(cover)}
                       />
                       <span className={`drop-badge status-${c.status}`}>
                         {collectionStatusLabel(c)}

@@ -15,7 +15,7 @@ import { useWallet } from "@/lib/wallet";
 import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { rememberMint } from "@/lib/mintCache";
 import { clearLaunchCheckpoint } from "@/lib/launchCheckpoint";
-import { DROP_DETAIL_FALLBACKS } from "@/lib/media";
+import { DROP_DETAIL_FALLBACKS, isOptimizableCoverUrl, resolveCoverUrl } from "@/lib/media";
 import { fadeUp, scaleIn, springSnappy } from "@/lib/motion";
 
 type Stage = "ready" | "intent" | "paying" | "queued" | "minting" | "done" | "error";
@@ -404,6 +404,7 @@ export default function DropDetailPage() {
     collection.description,
     collection.creatorDisplayName,
   );
+  const coverSrc = resolveCoverUrl(collection.coverUrl, DROP_DETAIL_FALLBACKS[0]);
 
   return (
     <m.section
@@ -419,11 +420,13 @@ export default function DropDetailPage() {
         transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
       >
         <Image
-          src={collection.coverUrl || DROP_DETAIL_FALLBACKS[0]}
+          src={coverSrc}
           alt=""
           fill
           sizes="(max-width: 860px) 100vw, 55vw"
           priority
+          style={{ objectFit: "cover", objectPosition: "center" }}
+          unoptimized={!isOptimizableCoverUrl(coverSrc)}
         />
       </m.div>
 
