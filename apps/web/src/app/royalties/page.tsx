@@ -67,6 +67,7 @@ export default function RoyaltiesPage() {
     sphereReady,
     ensureSphereForPayment,
     payUct,
+    disconnect,
   } = useWallet();
   const [summary, setSummary] = useState<RoyaltySummary | null>(null);
   const [entries, setEntries] = useState<RoyaltyEntry[]>([]);
@@ -87,7 +88,9 @@ export default function RoyaltiesPage() {
       const code =
         e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
       if (code === "UPAD_UNAUTHORIZED" || code === "UPAD_AUTH_FAILED") {
-        toast.error(e);
+        // Dead JWT still in localStorage — clear so the connect gate shows (no error toast).
+        disconnect();
+        toast.info("Session expired", "Reconnect Sphere to view earnings.");
       } else {
         setSummary(emptySummary());
         setEntries([]);
@@ -95,7 +98,7 @@ export default function RoyaltiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, toast]);
+  }, [token, toast, disconnect]);
 
   useEffect(() => {
     void refresh();

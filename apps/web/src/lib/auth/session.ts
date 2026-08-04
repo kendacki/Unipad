@@ -22,7 +22,8 @@ function jwtSecret(): Uint8Array {
 }
 
 function sessionTtlSeconds(): number {
-  return Number(process.env.SESSION_TTL_SECONDS ?? 7200);
+  // Default 30 days — short TTLs left users "signed in" in the UI with dead JWTs.
+  return Number(process.env.SESSION_TTL_SECONDS ?? 60 * 60 * 24 * 30);
 }
 
 /**

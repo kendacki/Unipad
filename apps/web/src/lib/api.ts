@@ -166,6 +166,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ nonce, signature }),
     }),
+  /** Returns principal when the Bearer JWT is still accepted by this deployment. */
+  session: (token: string) =>
+    request<{ principal: string; mock?: boolean }>("/v1/auth/session", { token }),
   walletTokens: (principal: string, nametag?: string | null) => {
     const params = new URLSearchParams();
     if (nametag) params.set("nametag", nametag);

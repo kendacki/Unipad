@@ -32,5 +32,5 @@ export const env = {
   uploadDir: process.env.UPLOAD_DIR ?? resolve(process.cwd(), "uploads"),
   publicApiUrl: process.env.PUBLIC_API_URL ?? `http://localhost:${process.env.PORT ?? 8787}`,
   devMock: process.env.UNIPAD_DEV_MOCK === "true",
-  sessionTtlSeconds: Number(process.env.SESSION_TTL_SECONDS ?? 7200),
+  sessionTtlSeconds: Number(process.env.SESSION_TTL_SECONDS ?? 60 * 60 * 24 * 30),
 };

@@ -123,13 +123,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         .trim()
         .toLowerCase()
         .replace(/^0x/, "");
-      if (!principal) {
+      if (!principal || !parsed.token || isSessionJwtExpired(parsed.token)) {
         localStorage.removeItem(STORAGE_KEY);
         return;
       }
       setToken(parsed.token);
       setPrincipal(principal);
       setDisplayName(parsed.displayName ?? null);
+
+      // Confirm the JWT is still accepted (covers secret rotation without waiting for a 401 toast).
+      void api.session(parsed.token).catch(() => {
+        localStorage.removeItem(STORAGE_KEY);
+        setToken(null);
+        setPrincipal(null);
+        setDisplayName(null);
+      });
     } catch {
       /* ignore */
     }
@@ -215,6 +223,29 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setDisplayName(null);
   }, [clearSphere]);
 
+  // Drop client state when the JWT hits expiry mid-session (no full page reload).
+  useEffect(() => {
+    if (!token) return;
+    if (isSessionJwtExpired(token)) {
+      disconnect();
+      return;
+    }
+    let expMs = 0;
+    try {
+      const part = token.split(".")[1];
+      const payload = JSON.parse(
+        atob(part.replace(/-/g, "+").replace(/_/g, "/")),
+      ) as { exp?: number };
+      expMs = typeof payload.exp === "number" ? payload.exp * 1000 : 0;
+    } catch {
+      return;
+    }
+    if (!expMs) return;
+    const delay = Math.max(0, expMs - Date.now() - 60_000);
+    const timer = window.setTimeout(() => disconnect(), delay);
+    return () => window.clearTimeout(timer);
+  }, [token, disconnect]);
+
   const completeAuth = useCallback(
     async (session: SphereSession) => {
       const { nonce, challenge } = await api.challenge(session.identity.chainPubkey);
@@ -266,6 +297,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       // Fresh visit, expired JWT, or different wallet → full Unipad sign-in.
       if (!tokenFresh || !existingPrincipal || existingPrincipal !== pubkey) {
+        return await completeAuth(session);
+      }
+
+      // JWT not expired by clock — still confirm this deployment accepts it
+      // (covers JWT_SECRET rotation / env mismatch).
+      try {
+        await api.session(existingToken!);
+      } catch {
         return await completeAuth(session);
       }
 

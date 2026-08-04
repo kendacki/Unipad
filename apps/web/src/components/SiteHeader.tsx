@@ -43,8 +43,8 @@ export function SiteHeader() {
         <nav className="nav">
           <Link href="/drops">Drops</Link>
           <Link href="/launch">Create</Link>
-          {principal ? <Link href="/wallet">My mints</Link> : null}
-          {principal ? <Link href="/royalties">Earnings</Link> : null}
+          {token ? <Link href="/wallet">My mints</Link> : null}
+          {token ? <Link href="/royalties">Earnings</Link> : null}
         </nav>
         <div className="header-actions">
           {token && principal ? (
