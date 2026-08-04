@@ -31,7 +31,6 @@ export default function DropDetailPage() {
     ensureSphereForPayment,
     connecting,
     payUct,
-    sphereReady,
   } = useWallet();
   const toast = useToast();
 
@@ -555,7 +554,7 @@ export default function DropDetailPage() {
           transition={springSnappy}
           onClick={runMint}
         >
-          {!token || !sphereReady
+          {!token
             ? connecting
               ? "Connecting…"
               : "Connect Sphere to mint"

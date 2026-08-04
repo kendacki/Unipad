@@ -80,6 +80,7 @@ export default function WalletPage() {
     token,
     connectSphere,
     connecting,
+    sessionHydrated,
     ensureSphereForPayment,
     resolveTransferRecipient,
     confirmNftTransfer,
@@ -298,6 +299,19 @@ export default function WalletPage() {
       return next;
     });
     await refresh();
+  }
+
+  if (!sessionHydrated) {
+    return (
+      <section className="section">
+        <div className="shell" style={{ maxWidth: 560 }}>
+          <div className="panel glass">
+            <h2>My mints</h2>
+            <p className="hint">Loading your session…</p>
+          </div>
+        </div>
+      </section>
+    );
   }
 
   if (!token || !sessionPrincipal) {

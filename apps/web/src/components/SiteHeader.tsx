@@ -11,9 +11,11 @@ import { slideDown, springSnappy } from "@/lib/motion";
 export function SiteHeader() {
   const toast = useToast();
   const pathname = usePathname();
-  const { token, principal, displayName, connecting, connectSphere, disconnect } = useWallet();
+  const { token, principal, displayName, connecting, sessionHydrated, connectSphere, disconnect } =
+    useWallet();
   /** Drop detail / mint pages — e.g. /drops/nova-trinket */
   const onMintPage = /^\/drops\/[^/]+\/?$/.test(pathname || "");
+  const signedIn = Boolean(token && principal);
 
   async function onConnect() {
     try {
@@ -43,22 +45,26 @@ export function SiteHeader() {
         <nav className="nav">
           <Link href="/drops">Drops</Link>
           <Link href="/launch">Create</Link>
-          {principal ? <Link href="/wallet">My mints</Link> : null}
-          {principal ? <Link href="/royalties">Earnings</Link> : null}
+          {signedIn ? <Link href="/wallet">My mints</Link> : null}
+          {signedIn ? <Link href="/royalties">Earnings</Link> : null}
         </nav>
         <div className="header-actions">
-          {token && principal ? (
+          {!sessionHydrated ? (
+            <span className="btn btn-ghost" aria-hidden style={{ visibility: "hidden" }}>
+              Connect Sphere
+            </span>
+          ) : signedIn ? (
             <>
               <m.div
                 className="user-chip"
-                title={displayName ?? principal}
+                title={displayName ?? principal ?? undefined}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={springSnappy}
               >
                 <IconPortrait className="user-portrait" />
                 <span className="user-chip-name">
-                  {displayName ?? shortPrincipal(principal)}
+                  {displayName ?? shortPrincipal(principal!)}
                 </span>
               </m.div>
               <m.button

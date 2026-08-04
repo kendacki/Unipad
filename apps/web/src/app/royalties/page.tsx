@@ -64,7 +64,7 @@ export default function RoyaltiesPage() {
     displayName,
     connectSphere,
     connecting,
-    sphereReady,
+    sessionHydrated,
     ensureSphereForPayment,
     payUct,
   } = useWallet();
@@ -257,6 +257,19 @@ export default function RoyaltiesPage() {
     }
   }
 
+  if (!sessionHydrated) {
+    return (
+      <section className="section earnings-page">
+        <div className="shell earnings-shell">
+          <div className="earnings-gate panel glass">
+            <h2>Earnings</h2>
+            <p className="hint">Loading your session…</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   if (!token) {
     return (
       <section className="section earnings-page">
@@ -399,11 +412,7 @@ export default function RoyaltiesPage() {
               transition={springSnappy}
               onClick={() => void sendPayout()}
             >
-              {paying
-                ? "Sending…"
-                : !sphereReady
-                  ? "Connect Sphere to send"
-                  : "Send payout"}
+              {paying ? "Sending…" : "Send payout"}
             </m.button>
           </div>
         </m.div>

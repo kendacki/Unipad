@@ -40,6 +40,8 @@ type WalletState = {
   principal: string | null;
   displayName: string | null;
   connecting: boolean;
+  /** False until localStorage session has been read (avoids Connect flash on refresh). */
+  sessionHydrated: boolean;
   /** True when the live Sphere Connect client is attached (needed for UCT send). */
   sphereReady: boolean;
   /** Opens Sphere wallet (extension or popup). Must run from a click handler. */
@@ -108,6 +110,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [principal, setPrincipal] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
   const [sphereReady, setSphereReady] = useState(false);
   const sphereRef = useRef<SphereHandle | null>(null);
   const tokenRef = useRef<string | null>(null);
@@ -130,21 +133,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem(STORAGE_KEY);
         return;
       }
-      const principal = (parsed.principal || "")
+      const nextPrincipal = (parsed.principal || "")
         .trim()
         .toLowerCase()
         .replace(/^0x/, "");
-      if (!principal || !parsed.token || isSessionJwtExpired(parsed.token)) {
+      if (!nextPrincipal || !parsed.token || isSessionJwtExpired(parsed.token)) {
         localStorage.removeItem(STORAGE_KEY);
         return;
       }
+      tokenRef.current = parsed.token;
+      principalRef.current = nextPrincipal;
       setToken(parsed.token);
-      setPrincipal(principal);
+      setPrincipal(nextPrincipal);
       setDisplayName(parsed.displayName ?? null);
-      // Do NOT ping /v1/auth/session here — a slow 401 from a stale JWT races a
-      // fresh Connect and wipes the new session after the success toast.
     } catch {
       /* ignore */
+    } finally {
+      setSessionHydrated(true);
     }
   }, []);
 
@@ -625,6 +630,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       principal,
       displayName,
       connecting,
+      sessionHydrated,
       sphereReady,
       connectSphere,
       ensureSphereConnected,
@@ -640,6 +646,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       principal,
       displayName,
       connecting,
+      sessionHydrated,
       sphereReady,
       connectSphere,
       ensureSphereConnected,

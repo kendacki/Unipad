@@ -83,7 +83,7 @@ const STEP_HELP = [
 export default function LaunchPage() {
   const router = useRouter();
   const toast = useToast();
-  const { token, connectSphere, connecting, ensureSphereForPayment, confirmPublishDrop } =
+  const { token, connectSphere, connecting, sessionHydrated, ensureSphereForPayment, confirmPublishDrop } =
     useWallet();
   const [step, setStep] = useState<Step>(0);
   const [submitting, setSubmitting] = useState(false);
@@ -455,7 +455,7 @@ export default function LaunchPage() {
           </m.p>
         </AnimatePresence>
 
-        {!token ? (
+        {sessionHydrated && !token ? (
           <m.div
             className="launch-card"
             initial={{ opacity: 0, y: 10 }}
