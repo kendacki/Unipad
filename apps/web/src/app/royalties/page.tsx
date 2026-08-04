@@ -79,35 +79,26 @@ export default function RoyaltiesPage() {
 
   const refresh = useCallback(async () => {
     if (!token) return;
-    const requestToken = token;
     setLoading(true);
     try {
-      const r = await api.royalties(requestToken);
+      const r = await api.royalties(token);
       setSummary({ ...emptySummary(), ...r.summary });
       setEntries(r.entries);
     } catch (e) {
       const code =
         e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
-      if (code === "UPAD_UNAUTHORIZED" || code === "UPAD_AUTH_FAILED") {
-        // Only clear if this request's JWT is still the active one — otherwise a
-        // reconnect mid-flight would wipe the fresh session after "connected".
-        try {
-          const raw = localStorage.getItem("unipad.session");
-          const current = raw ? (JSON.parse(raw) as { token?: string }).token : null;
-          if (current && current !== requestToken) return;
-        } catch {
-          /* fall through and clear */
-        }
-        disconnect();
-        toast.info("Session expired", "Reconnect Sphere to view earnings.");
-      } else {
-        setSummary(emptySummary());
-        setEntries([]);
+      // Never wipe the wallet session from this page — a 401 here used to race a
+      // fresh Sphere connect and clear the header right after the success toast.
+      setSummary(emptySummary());
+      setEntries([]);
+      if (code !== "UPAD_UNAUTHORIZED" && code !== "UPAD_AUTH_FAILED") {
+        /* keep empty board for other errors too */
       }
+      void e;
     } finally {
       setLoading(false);
     }
-  }, [token, toast, disconnect]);
+  }, [token]);
 
   useEffect(() => {
     void refresh();

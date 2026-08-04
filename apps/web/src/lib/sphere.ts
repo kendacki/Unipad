@@ -72,7 +72,10 @@ export function isSessionJwtExpired(token: string | null | undefined): boolean {
   try {
     const part = token.split(".")[1];
     if (!part) return true;
-    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    // JWT uses base64url without padding — pad before atob (strict browsers).
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const json = atob(padded);
     const payload = JSON.parse(json) as { exp?: number };
     if (typeof payload.exp !== "number") return true;
     return payload.exp * 1000 <= Date.now() + 60_000;
