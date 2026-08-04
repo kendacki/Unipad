@@ -118,8 +118,6 @@ export async function recordMintSale(input: {
 
   // Seed / demo catalog creators are not seller accounts.
   if (!creator || creator.startsWith("mock_")) return null;
-  // Self-mints are not seller sales.
-  if (creator === buyer) return null;
 
   const existing = await findSaleBySaleId(input.saleId);
   if (existing) return existing;
