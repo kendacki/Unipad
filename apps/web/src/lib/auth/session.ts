@@ -23,7 +23,10 @@ function jwtSecret(): Uint8Array {
 
 function sessionTtlSeconds(): number {
   // Default 30 days — short TTLs left users "signed in" in the UI with dead JWTs.
-  return Number(process.env.SESSION_TTL_SECONDS ?? 60 * 60 * 24 * 30);
+  const fallback = 60 * 60 * 24 * 30;
+  const n = Number(process.env.SESSION_TTL_SECONDS ?? fallback);
+  if (!Number.isFinite(n) || n < 60) return fallback;
+  return Math.floor(n);
 }
 
 /**

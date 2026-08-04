@@ -130,14 +130,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setToken(parsed.token);
       setPrincipal(principal);
       setDisplayName(parsed.displayName ?? null);
-
-      // Confirm the JWT is still accepted (covers secret rotation without waiting for a 401 toast).
-      void api.session(parsed.token).catch(() => {
-        localStorage.removeItem(STORAGE_KEY);
-        setToken(null);
-        setPrincipal(null);
-        setDisplayName(null);
-      });
+      // Do NOT ping /v1/auth/session here — a slow 401 from a stale JWT races a
+      // fresh Connect and wipes the new session after the success toast.
     } catch {
       /* ignore */
     }

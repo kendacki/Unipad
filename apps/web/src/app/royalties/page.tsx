@@ -79,16 +79,25 @@ export default function RoyaltiesPage() {
 
   const refresh = useCallback(async () => {
     if (!token) return;
+    const requestToken = token;
     setLoading(true);
     try {
-      const r = await api.royalties(token);
+      const r = await api.royalties(requestToken);
       setSummary({ ...emptySummary(), ...r.summary });
       setEntries(r.entries);
     } catch (e) {
       const code =
         e && typeof e === "object" && "code" in e ? String((e as { code: string }).code) : "";
       if (code === "UPAD_UNAUTHORIZED" || code === "UPAD_AUTH_FAILED") {
-        // Dead JWT still in localStorage — clear so the connect gate shows (no error toast).
+        // Only clear if this request's JWT is still the active one — otherwise a
+        // reconnect mid-flight would wipe the fresh session after "connected".
+        try {
+          const raw = localStorage.getItem("unipad.session");
+          const current = raw ? (JSON.parse(raw) as { token?: string }).token : null;
+          if (current && current !== requestToken) return;
+        } catch {
+          /* fall through and clear */
+        }
         disconnect();
         toast.info("Session expired", "Reconnect Sphere to view earnings.");
       } else {
