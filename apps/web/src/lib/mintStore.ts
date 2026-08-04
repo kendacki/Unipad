@@ -989,8 +989,13 @@ export async function submitMint(params: {
       buyerPrincipal: walletPrincipal,
       tokenId: token.tokenId,
     });
-  } catch {
-    // Mint already settled — earnings ledger is best-effort accounting.
+  } catch (err) {
+    // Mint already settled — surface in logs so silent ledger gaps are visible.
+    console.error("recordMintSale failed after confirmed mint", {
+      collectionId: collectionBase.id,
+      saleId: intent.idempotencyKey,
+      error: err instanceof Error ? err.message : err,
+    });
   }
 
   return {
