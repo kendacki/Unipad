@@ -75,7 +75,7 @@ const STEP_HELP = [
   "Name, owner, and cover.",
   "Supply, price, and open time.",
   "Early-access wallets.",
-  "Check details, then save.",
+  "Confirm everything looks right, then save.",
   "Publish when you’re ready.",
 ] as const;
 
@@ -753,29 +753,82 @@ export default function LaunchPage() {
               exit={{ opacity: 0, x: -10 }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="launch-review">
-                <h3>{name}</h3>
-                <p className="muted">
-                  {ownerName} · {totalSupply} supply · {mintLimitLabel(mintLimit)}
-                </p>
-                <ul>
-                  {activePhases.map((p) => (
-                    <li key={p.type}>
-                      {p.name}: <strong>{p.priceDisplay} UCT</strong>
-                    </li>
-                  ))}
-                </ul>
-                {allowlistText.trim() ? (
-                  <p className="muted">
-                    Guest list: {allowlistText.split(/[\n,]+/).filter((w) => w.trim()).length}
-                  </p>
+              <div className="launch-check">
+                <header className="launch-check-hero">
+                  {resolvedCoverUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- remote cover URL from creator
+                    <img
+                      className="launch-check-cover"
+                      src={resolvedCoverUrl}
+                      alt=""
+                    />
+                  ) : (
+                    <div className="launch-check-cover launch-check-cover-empty" aria-hidden>
+                      <span>No cover</span>
+                    </div>
+                  )}
+                  <div className="launch-check-hero-copy">
+                    <p className="launch-check-eyebrow">Final check</p>
+                    <h3 className="launch-check-title">{name || "Untitled drop"}</h3>
+                    {slug ? <p className="launch-check-slug">/{slug}</p> : null}
+                  </div>
+                </header>
+
+                <dl className="launch-check-grid">
+                  <div className="launch-check-row">
+                    <dt>Owner</dt>
+                    <dd>{ownerName || "—"}</dd>
+                  </div>
+                  <div className="launch-check-row">
+                    <dt>Supply</dt>
+                    <dd>{totalSupply.toLocaleString()} items</dd>
+                  </div>
+                  <div className="launch-check-row">
+                    <dt>Mint limit</dt>
+                    <dd>{mintLimitLabel(mintLimit)}</dd>
+                  </div>
+                  <div className="launch-check-row">
+                    <dt>Opens</dt>
+                    <dd>
+                      {previewLaunchAt
+                        ? formatLaunchAt(previewLaunchAt)
+                        : "On publish"}
+                    </dd>
+                  </div>
+                  {hasAllowlist ? (
+                    <div className="launch-check-row">
+                      <dt>Guest list</dt>
+                      <dd>
+                        {allowlistText
+                          .split(/[\n,]+/)
+                          .filter((w) => w.trim()).length || 0}{" "}
+                        wallets
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+
+                <section className="launch-check-phases" aria-label="Mint phases">
+                  <h4 className="launch-check-section-label">Mint phases</h4>
+                  <ul className="launch-check-phase-list">
+                    {activePhases.map((p) => (
+                      <li key={p.type} className="launch-check-phase">
+                        <span className="launch-check-phase-name">{p.name}</span>
+                        <span className="launch-check-phase-price">
+                          {p.priceDisplay}
+                          <span className="launch-check-phase-unit"> UCT</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+
+                {description ? (
+                  <section className="launch-check-about" aria-label="Description">
+                    <h4 className="launch-check-section-label">About</h4>
+                    <p className="launch-check-desc">{description}</p>
+                  </section>
                 ) : null}
-                <p className="schedule-preview">
-                  {previewLaunchAt
-                    ? `Opens ${formatLaunchAt(previewLaunchAt)}`
-                    : "Opens on publish"}
-                </p>
-                {description ? <p className="launch-review-desc">{description}</p> : null}
               </div>
               {actions(
                 () => setStep(hasAllowlist ? 2 : 1),
