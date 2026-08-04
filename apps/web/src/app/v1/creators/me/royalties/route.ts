@@ -5,11 +5,13 @@ import { getCreatorEarnings } from "@/lib/earningsStore";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Seller earnings — primary mint sales net of platform fee. */
+/** Seller earnings — drop sales + received transfers (Balance only). */
 export async function GET(request: Request) {
   try {
     const session = await requireAuth(request.headers.get("Authorization"));
-    const data = await getCreatorEarnings(session.principal);
+    const url = new URL(request.url);
+    const nametag = url.searchParams.get("nametag");
+    const data = await getCreatorEarnings(session.principal, nametag);
     return NextResponse.json(data);
   } catch (err) {
     if (err instanceof AuthError) {

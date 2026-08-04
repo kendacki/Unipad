@@ -112,11 +112,13 @@ export interface RoyaltySummary {
   accruedUct: string;
   paidUct: string;
   platformFeeBps: number;
-  /** Sum of mint sale prices (before fee). */
+  /** Sum of mint sale prices (before fee). Excludes peer transfers. */
   grossSalesUct: string;
   /** Sum of platform fees taken from primary mints. */
   platformFeesUct: string;
   saleCount: number;
+  /** Lifetime creator net from drop sales only (excludes received transfers). */
+  earnedFromSalesUct?: string;
 }
 
 export interface RoyaltyEntry {
@@ -135,6 +137,8 @@ export interface RoyaltyEntry {
   payoutRecipient?: string | null;
   /** Seller Sphere @nametag shown on the payout (not the drop name). */
   payoutSender?: string | null;
+  /** sale = drop mint credit; inbound = received peer payout (Balance only, not Earned). */
+  entryKind?: "sale" | "inbound";
 }
 
 /** Default primary-mint platform fee: 2.5% (250 bps). */

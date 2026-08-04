@@ -107,11 +107,15 @@ export const api = {
       token,
       body: JSON.stringify({ phaseId, entries }),
     }),
-  royalties: (token: string) =>
-    request<{ summary: RoyaltySummary; entries: RoyaltyEntry[] }>(
-      "/v1/creators/me/royalties",
+  royalties: (token: string, nametag?: string | null) => {
+    const q = nametag?.trim()
+      ? `?nametag=${encodeURIComponent(nametag.trim())}`
+      : "";
+    return request<{ summary: RoyaltySummary; entries: RoyaltyEntry[] }>(
+      `/v1/creators/me/royalties${q}`,
       { token },
-    ),
+    );
+  },
   payoutRoyalties: (
     token: string,
     body: {

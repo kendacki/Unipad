@@ -23,9 +23,11 @@ const emptySummary = (): RoyaltySummary => ({
   grossSalesUct: "0",
   platformFeesUct: "0",
   saleCount: 0,
+  earnedFromSalesUct: "0",
 });
 
-function statusLabel(status: string) {
+function statusLabel(status: string, kind?: string) {
+  if (kind === "inbound" && status !== "paid") return "Received";
   if (status === "paid") return "Paid";
   if (status === "accrued") return "Credited";
   return status;
@@ -80,7 +82,7 @@ export default function RoyaltiesPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const r = await api.royalties(token);
+      const r = await api.royalties(token, asSphereNametag(displayName));
       setSummary({ ...emptySummary(), ...r.summary });
       setEntries(r.entries);
     } catch {
@@ -91,7 +93,7 @@ export default function RoyaltiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, displayName]);
 
   useEffect(() => {
     void refresh();
@@ -102,9 +104,13 @@ export default function RoyaltiesPage() {
   const hasBalance = BigInt(balanceBase || "0") > 0n;
 
   const earnedTotal = useMemo(() => {
-    if (!summary) return "0";
-    return (BigInt(summary.accruedUct || "0") + BigInt(summary.paidUct || "0")).toString();
-  }, [summary]);
+    if (summary?.earnedFromSalesUct) return summary.earnedFromSalesUct;
+    // Fallback: sales only — never count received peer transfers as Earned.
+    return entries
+      .filter((e) => e.entryKind !== "inbound")
+      .reduce((sum, e) => sum + BigInt(e.creatorNetUct || "0"), 0n)
+      .toString();
+  }, [summary, entries]);
 
   const sortedEntries = useMemo(() => {
     return [...entries].sort((a, b) => {
@@ -176,15 +182,17 @@ export default function RoyaltiesPage() {
       return;
     }
 
+    const senderTag = asSphereNametag(displayName);
+
     // Refresh Balance before opening Sphere so we don't start a payment we can't record.
     try {
-      const latest = await api.royalties(token);
+      const latest = await api.royalties(token, senderTag);
       setSummary({ ...emptySummary(), ...latest.summary });
       setEntries(latest.entries);
       const liveAvailable = BigInt(latest.summary.accruedUct || "0");
       if (requested > liveAvailable) {
         setAmountDisplay(formatUct(liveAvailable.toString()));
-        toast.error("Earnings balance changed. Amount was capped to what’s available from sales.");
+        toast.error("Earnings balance changed. Amount was capped to what’s available.");
         return;
       }
     } catch (e) {
@@ -193,7 +201,6 @@ export default function RoyaltiesPage() {
     }
 
     const tagged = to.startsWith("@") ? to : `@${to}`;
-    const senderTag = asSphereNametag(displayName);
     const payoutMemo = senderTag
       ? `From ${senderTag}`
       : "From Unipad seller";
@@ -238,12 +245,25 @@ export default function RoyaltiesPage() {
     }
 
     try {
-      const result = await api.payoutRoyalties(token, {
-        amountUct,
-        recipient: to,
-        paymentRef,
-        senderNametag: senderTag,
-      });
+      // Retry ledger write — Sphere may have already moved funds.
+      let result: Awaited<ReturnType<typeof api.payoutRoyalties>> | null = null;
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          result = await api.payoutRoyalties(token, {
+            amountUct,
+            recipient: to,
+            paymentRef,
+            senderNametag: senderTag,
+          });
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+          await new Promise((r) => window.setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
+      if (!result) throw lastErr;
       setSummary({ ...emptySummary(), ...result.summary });
       setEntries(result.entries);
       setAmountDisplay("");
@@ -312,7 +332,7 @@ export default function RoyaltiesPage() {
         <m.div className="earnings-top" variants={fadeUp} initial="hidden" animate="show">
           <div className="earnings-title">
             <h2>Earnings</h2>
-            <p>From mints on your drops</p>
+            <p>Balance is available to send. Earned is only from drop sales.</p>
           </div>
         </m.div>
 
@@ -359,7 +379,7 @@ export default function RoyaltiesPage() {
         >
           <div className="earnings-payout-copy">
             <h3>Send payout</h3>
-            <p>Send from Balance only. Sent amounts move to Paid out.</p>
+            <p>Send from Balance. Drop sales count as Earned; received transfers only add Balance.</p>
           </div>
 
           <div className="earnings-payout-grid">
@@ -452,12 +472,20 @@ export default function RoyaltiesPage() {
                   </thead>
                   <tbody>
                     {visibleEntries.map((e) => {
-                      const isPayout = e.payoutStatus === "paid" && Boolean(e.payoutRecipient);
+                      const isInbound = e.entryKind === "inbound";
+                      const isPayout = e.payoutStatus === "paid" && Boolean(e.payoutRecipient) && !isInbound;
                       const senderLabel = e.payoutSender || asSphereNametag(displayName);
                       return (
                         <tr key={e.id}>
                           <td>
-                            {isPayout ? (
+                            {isInbound ? (
+                              <>
+                                <strong>Received transfer</strong>
+                                <div className="earnings-paid-to">
+                                  from {e.payoutSender || "seller"}
+                                </div>
+                              </>
+                            ) : isPayout ? (
                               <>
                                 <strong>{senderLabel || "You"}</strong>
                                 <div className="earnings-paid-to">to {e.payoutRecipient}</div>
@@ -476,7 +504,7 @@ export default function RoyaltiesPage() {
                                 e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
                               }`}
                             >
-                              {statusLabel(e.payoutStatus)}
+                              {statusLabel(e.payoutStatus, e.entryKind)}
                             </span>
                           </td>
                           <td className="muted">
