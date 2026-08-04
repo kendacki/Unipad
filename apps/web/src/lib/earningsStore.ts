@@ -555,14 +555,28 @@ export async function applyCreatorPayout(
   // Idempotent retry after Sphere already moved funds.
   const prior = await findByPayoutRef(paymentRef);
   if (prior) {
+    // Still ensure the recipient Sphere tag got a Balance credit (may have failed earlier).
+    try {
+      await creditInboundTransfer({
+        recipientNametag: recipient,
+        amountUct: amount.toString(),
+        paymentRef,
+        senderPrincipal: key,
+        senderNametag: payoutSender,
+      });
+    } catch (err) {
+      console.error("creditInboundTransfer (idempotent) failed", err);
+    }
     const result = await getCreatorEarnings(principal, payoutSender);
     return { ...result, paidUct: amount.toString() };
   }
 
   await claimInboundForNametag(key, payoutSender);
 
-  const { summary: before } = await getCreatorEarnings(principal, payoutSender);
-  const accrued = BigInt(before.accruedUct || "0");
+  // Fast balance check from ledger rows (avoid double full getCreatorEarnings).
+  const existingRows = dedupeSales(await loadCreatorRows(key));
+  const beforeSummary = buildSummary(existingRows);
+  const accrued = BigInt(beforeSummary.accruedUct || "0");
 
   if (accrued <= 0n) {
     throw new EarningsHttpError(
@@ -603,7 +617,7 @@ export async function applyCreatorPayout(
   };
   await saveSale(outbound);
 
-  // Recipient Balance credit (never Earned) — claimable when they open Earnings.
+  // Recipient Balance credit on their Sphere @nametag (never Earned).
   try {
     await creditInboundTransfer({
       recipientNametag: recipient,
@@ -614,6 +628,7 @@ export async function applyCreatorPayout(
     });
   } catch (err) {
     console.error("creditInboundTransfer failed", err);
+    // Don't fail the sender's payout record — heal scripts / retries can credit inbound.
   }
 
   const result = await getCreatorEarnings(principal, payoutSender);

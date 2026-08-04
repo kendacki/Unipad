@@ -251,7 +251,7 @@ export default function RoyaltiesPage() {
         try {
           result = await api.payoutRoyalties(token, {
             amountUct,
-            recipient: to,
+            recipient: tagged,
             paymentRef,
             senderNametag: senderTag,
           });
@@ -259,7 +259,7 @@ export default function RoyaltiesPage() {
           break;
         } catch (e) {
           lastErr = e;
-          await new Promise((r) => window.setTimeout(r, 400 * (attempt + 1)));
+          await new Promise((r) => window.setTimeout(r, 350 * (attempt + 1)));
         }
       }
       if (!result) throw lastErr;
@@ -269,7 +269,13 @@ export default function RoyaltiesPage() {
       setRecipient("");
       toast.success("Sent", `${formatUct(result.paidUct)} UCT delivered to ${tagged}.`);
     } catch (e) {
-      toast.error(e);
+      toast.error(
+        e instanceof Error
+          ? e
+          : new Error(
+              `UCT may have left your wallet, but Earnings did not update. Tap Send again with the same recipient — the ledger will catch up.`,
+            ),
+      );
       void refresh();
     } finally {
       setPaying(false);
