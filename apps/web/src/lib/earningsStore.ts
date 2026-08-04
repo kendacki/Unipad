@@ -15,7 +15,6 @@ import {
   normalizePlatformFeeBps,
   normalizeSphereRecipient,
   splitMintProceeds,
-  summarizeRoyaltyLedger,
   type RoyaltyEntry,
   type RoyaltySummary,
 } from "@unipad/shared";
@@ -200,7 +199,24 @@ function dedupeSales(sales: StoredSale[]): StoredSale[] {
   return [...bySale.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+function isOutboundRow(r: StoredSale): boolean {
+  if (r.entryKind === "outbound") return true;
+  if (r.entryKind === "inbound") return false;
+  // Legacy model marked sale slices as paid in place — treat those as outbound history.
+  return r.payoutStatus === "paid" && Boolean(r.payoutRecipient);
+}
+
+function saleRootId(saleId: string): string {
+  return saleId.split(":payout:")[0] || saleId;
+}
+
 function asEntry(s: StoredSale): RoyaltyEntry {
+  const kind =
+    s.entryKind === "inbound"
+      ? "inbound"
+      : s.entryKind === "outbound" || isOutboundRow(s)
+        ? "outbound"
+        : "sale";
   return {
     id: s.id,
     saleId: s.saleId,
@@ -214,24 +230,136 @@ function asEntry(s: StoredSale): RoyaltyEntry {
     paidAt: s.paidAt ?? null,
     payoutRecipient: s.payoutRecipient ?? null,
     payoutSender: s.payoutSender ?? null,
-    entryKind: s.entryKind === "inbound" ? "inbound" : "sale",
+    entryKind: kind,
   };
 }
 
+/**
+ * Transaction history is append-only for the user:
+ * - Sale credits keep their original Net (never shrunk by later sends)
+ * - Sends appear as separate outbound rows
+ */
+function presentEntries(rows: StoredSale[]): RoyaltyEntry[] {
+  const outbounds: RoyaltyEntry[] = [];
+  const inbounds: RoyaltyEntry[] = [];
+  const saleGroups = new Map<string, StoredSale[]>();
+
+  for (const r of rows) {
+    if (r.entryKind === "outbound") {
+      outbounds.push(asEntry({ ...r, entryKind: "outbound" }));
+      continue;
+    }
+    if (r.entryKind === "inbound") {
+      inbounds.push(asEntry(r));
+      continue;
+    }
+
+    // Legacy paid sale slice → also an outbound event, but still counts toward original sale total.
+    if (isOutboundRow(r)) {
+      outbounds.push(
+        asEntry({
+          ...r,
+          entryKind: "outbound",
+          collectionId: "transfer-out",
+          collectionName: "Payout",
+        }),
+      );
+    }
+
+    const root = saleRootId(r.saleId);
+    const group = saleGroups.get(root) || [];
+    group.push(r);
+    saleGroups.set(root, group);
+  }
+
+  const sales: RoyaltyEntry[] = [];
+  for (const [root, group] of saleGroups) {
+    let net = 0n;
+    let gross = 0n;
+    let fee = 0n;
+    let createdAt = group[0]?.createdAt || new Date().toISOString();
+    let collectionId = group[0]?.collectionId || root;
+    let collectionName = group[0]?.collectionName || "Sale";
+    let id = group[0]?.id || root;
+    for (const g of group) {
+      net += BigInt(g.creatorNetUct || "0");
+      gross += BigInt(g.grossUct || "0");
+      fee += BigInt(g.platformFeeUct || "0");
+      if (g.createdAt < createdAt) {
+        createdAt = g.createdAt;
+        collectionId = g.collectionId;
+        collectionName = g.collectionName;
+        id = g.id;
+      }
+    }
+    if (net <= 0n) continue;
+    sales.push({
+      id: `sale-view-${root}`,
+      saleId: root,
+      collectionId,
+      collectionName,
+      grossUct: gross.toString(),
+      platformFeeUct: fee.toString(),
+      creatorNetUct: net.toString(),
+      payoutStatus: "accrued",
+      createdAt,
+      paidAt: null,
+      payoutRecipient: null,
+      payoutSender: null,
+      entryKind: "sale",
+    });
+  }
+
+  return [...sales, ...inbounds, ...outbounds].sort((a, b) => {
+    const aTime = a.paidAt || a.createdAt;
+    const bTime = b.paidAt || b.createdAt;
+    return bTime.localeCompare(aTime);
+  });
+}
+
 function buildSummary(rows: StoredSale[]): RoyaltySummary {
-  const sales = rows.filter((r) => r.entryKind !== "inbound");
-  const salesSummary = summarizeRoyaltyLedger(sales, platformFeeBps());
-  const allSummary = summarizeRoyaltyLedger(rows, platformFeeBps());
-  const earned =
-    BigInt(salesSummary.accruedUct || "0") + BigInt(salesSummary.paidUct || "0");
+  const outbounds = rows.filter(isOutboundRow);
+  const inbounds = rows.filter((r) => r.entryKind === "inbound");
+  const saleRows = rows.filter(
+    (r) => r.entryKind !== "inbound" && r.entryKind !== "outbound",
+  );
+
+  const roots = new Map<string, { net: bigint; gross: bigint; fee: bigint }>();
+  for (const s of saleRows) {
+    const root = saleRootId(s.saleId);
+    const prev = roots.get(root) || { net: 0n, gross: 0n, fee: 0n };
+    prev.net += BigInt(s.creatorNetUct || "0");
+    prev.gross += BigInt(s.grossUct || "0");
+    prev.fee += BigInt(s.platformFeeUct || "0");
+    roots.set(root, prev);
+  }
+
+  let earned = 0n;
+  let gross = 0n;
+  let fees = 0n;
+  for (const v of roots.values()) {
+    earned += v.net;
+    gross += v.gross;
+    fees += v.fee;
+  }
+
+  const inboundTotal = inbounds.reduce(
+    (sum, r) => sum + BigInt(r.creatorNetUct || "0"),
+    0n,
+  );
+  const paidOut = outbounds.reduce(
+    (sum, r) => sum + BigInt(r.creatorNetUct || "0"),
+    0n,
+  );
+  const balance = earned + inboundTotal - paidOut;
+
   return {
-    // Balance = everything still accrued (sales + received transfers).
-    accruedUct: allSummary.accruedUct,
-    paidUct: allSummary.paidUct,
-    platformFeeBps: salesSummary.platformFeeBps,
-    grossSalesUct: salesSummary.grossSalesUct,
-    platformFeesUct: salesSummary.platformFeesUct,
-    saleCount: salesSummary.saleCount,
+    accruedUct: (balance > 0n ? balance : 0n).toString(),
+    paidUct: paidOut.toString(),
+    platformFeeBps: platformFeeBps(),
+    grossSalesUct: gross.toString(),
+    platformFeesUct: fees.toString(),
+    saleCount: roots.size,
     earnedFromSalesUct: earned.toString(),
   };
 }
@@ -354,7 +482,7 @@ export async function getCreatorEarnings(
 
   const all = dedupeSales(sales);
   const summary = buildSummary(all);
-  const entries: RoyaltyEntry[] = all.slice(0, 200).map(asEntry);
+  const entries = presentEntries(all).slice(0, 200);
   return { summary, entries };
 }
 
@@ -451,93 +579,29 @@ export async function applyCreatorPayout(
     );
   }
 
-  let sales = await loadCreatorRows(key);
-  const accruedRows = dedupeSales(sales)
-    .filter((s) => s.payoutStatus !== "paid" && BigInt(s.creatorNetUct || "0") > 0n)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-
-  if (!accruedRows.length) {
-    throw new EarningsHttpError(
-      "No credited balance left to pay out",
-      400,
-      "UPAD_VALIDATION",
-    );
-  }
-
-  const allocatable = accruedRows.reduce((sum, s) => sum + BigInt(s.creatorNetUct || "0"), 0n);
-  if (amount > allocatable) {
-    throw new EarningsHttpError(
-      "Amount exceeds credited balance available to pay out",
-      400,
-      "UPAD_VALIDATION",
-    );
-  }
-
-  let remaining = amount;
   const now = new Date().toISOString();
 
-  for (const sale of accruedRows) {
-    if (remaining <= 0n) break;
-    const net = BigInt(sale.creatorNetUct || "0");
-    if (net <= 0n) continue;
-    const isInbound = sale.entryKind === "inbound";
-
-    if (remaining >= net) {
-      const next: StoredSale = {
-        ...sale,
-        payoutStatus: "paid",
-        paidAt: now,
-        payoutRecipient: recipient,
-        payoutSender,
-        payoutRef: paymentRef,
-      };
-      await saveSale(next);
-      remaining -= net;
-      continue;
-    }
-
-    const paidNet = remaining;
-    const leftNet = net - paidNet;
-    const feeTotal = BigInt(sale.platformFeeUct || "0");
-    const grossTotal = BigInt(sale.grossUct || "0");
-    const paidFee = !isInbound && feeTotal > 0n && net > 0n ? (feeTotal * paidNet) / net : 0n;
-    const paidGross = isInbound ? paidNet : paidNet + paidFee;
-    const leftFee = feeTotal - paidFee;
-    const leftGross = isInbound ? leftNet : grossTotal - paidGross;
-
-    const paidRow: StoredSale = {
-      ...sale,
-      id: `${sale.id}-p${nanoid(6)}`,
-      saleId: `${sale.saleId}:payout:${nanoid(8)}`,
-      grossUct: paidGross.toString(),
-      platformFeeUct: paidFee.toString(),
-      creatorNetUct: paidNet.toString(),
-      payoutStatus: "paid",
-      paidAt: now,
-      payoutRecipient: recipient,
-      payoutSender,
-      payoutRef: paymentRef,
-      createdAt: sale.createdAt,
-    };
-    const leftRow: StoredSale = {
-      ...sale,
-      grossUct: leftGross > 0n ? leftGross.toString() : "0",
-      platformFeeUct: leftFee > 0n ? leftFee.toString() : "0",
-      creatorNetUct: leftNet.toString(),
-      payoutStatus: "accrued",
-      paidAt: null,
-      payoutRecipient: isInbound ? sale.payoutRecipient : null,
-      payoutSender: isInbound ? sale.payoutSender : null,
-      payoutRef: null,
-    };
-    await saveSale(paidRow);
-    await saveSale(leftRow);
-    remaining = 0n;
-  }
-
-  if (remaining > 0n) {
-    throw new EarningsHttpError("Could not allocate full payout amount", 500, "UPAD_UNKNOWN");
-  }
+  // Append-only: never shrink original sale credits. Record the send as its own row.
+  const outbound: StoredSale = {
+    id: `out-${nanoid(14)}`,
+    saleId: `outbound:${paymentRef}`,
+    collectionId: "transfer-out",
+    collectionName: "Payout",
+    grossUct: amount.toString(),
+    platformFeeUct: "0",
+    creatorNetUct: amount.toString(),
+    payoutStatus: "paid",
+    createdAt: now,
+    paidAt: now,
+    creatorPrincipal: key,
+    buyerPrincipal: key,
+    tokenId: 0,
+    entryKind: "outbound",
+    payoutRecipient: recipient,
+    payoutSender,
+    payoutRef: paymentRef,
+  };
+  await saveSale(outbound);
 
   // Recipient Balance credit (never Earned) — claimable when they open Earnings.
   try {

@@ -137,8 +137,8 @@ export interface RoyaltyEntry {
   payoutRecipient?: string | null;
   /** Seller Sphere @nametag shown on the payout (not the drop name). */
   payoutSender?: string | null;
-  /** sale = drop mint credit; inbound = received peer payout (Balance only, not Earned). */
-  entryKind?: "sale" | "inbound";
+  /** sale = drop mint credit; inbound = received transfer; outbound = sent payout. */
+  entryKind?: "sale" | "inbound" | "outbound";
 }
 
 /** Default primary-mint platform fee: 2.5% (250 bps). */

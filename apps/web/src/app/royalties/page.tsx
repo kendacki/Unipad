@@ -28,7 +28,7 @@ const emptySummary = (): RoyaltySummary => ({
 
 function statusLabel(status: string, kind?: string) {
   if (kind === "inbound" && status !== "paid") return "Received";
-  if (status === "paid") return "Paid";
+  if (kind === "outbound" || status === "paid") return "Sent";
   if (status === "accrued") return "Credited";
   return status;
 }
@@ -105,9 +105,8 @@ export default function RoyaltiesPage() {
 
   const earnedTotal = useMemo(() => {
     if (summary?.earnedFromSalesUct) return summary.earnedFromSalesUct;
-    // Fallback: sales only — never count received peer transfers as Earned.
     return entries
-      .filter((e) => e.entryKind !== "inbound")
+      .filter((e) => e.entryKind === "sale" || (!e.entryKind && e.payoutStatus !== "paid"))
       .reduce((sum, e) => sum + BigInt(e.creatorNetUct || "0"), 0n)
       .toString();
   }, [summary, entries]);
@@ -473,7 +472,9 @@ export default function RoyaltiesPage() {
                   <tbody>
                     {visibleEntries.map((e) => {
                       const isInbound = e.entryKind === "inbound";
-                      const isPayout = e.payoutStatus === "paid" && Boolean(e.payoutRecipient) && !isInbound;
+                      const isOutbound =
+                        e.entryKind === "outbound" ||
+                        (e.payoutStatus === "paid" && Boolean(e.payoutRecipient) && !isInbound);
                       const senderLabel = e.payoutSender || asSphereNametag(displayName);
                       return (
                         <tr key={e.id}>
@@ -485,7 +486,7 @@ export default function RoyaltiesPage() {
                                   from {e.payoutSender || "seller"}
                                 </div>
                               </>
-                            ) : isPayout ? (
+                            ) : isOutbound ? (
                               <>
                                 <strong>{senderLabel || "You"}</strong>
                                 <div className="earnings-paid-to">to {e.payoutRecipient}</div>
@@ -501,7 +502,7 @@ export default function RoyaltiesPage() {
                           <td>
                             <span
                               className={`earnings-status ${
-                                e.payoutStatus === "paid" ? "is-paid" : "is-accrued"
+                                isOutbound ? "is-paid" : "is-accrued"
                               }`}
                             >
                               {statusLabel(e.payoutStatus, e.entryKind)}
