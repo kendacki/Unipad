@@ -1217,12 +1217,6 @@ h3,
   color: var(--white);
 }
 
-.drop-tile-wrap.is-highlight .drop-tile {
-  outline: 2px solid var(--orange);
-  outline-offset: 3px;
-  box-shadow: 0 14px 36px rgba(255, 106, 0, 0.16);
-}
-
 .drop-meta {
   display: flex;
   justify-content: space-between;

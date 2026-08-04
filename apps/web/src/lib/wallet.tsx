@@ -77,6 +77,17 @@ type WalletState = {
     tokenId: number;
     to: string;
   }) => Promise<{ signature: string; message: string }>;
+  /**
+   * Open Sphere and ask the user to sign a drop-publish confirmation.
+   * Must run under the same click gesture as prepareSpherePaymentWindow.
+   */
+  confirmPublishDrop: (params: {
+    collectionName: string;
+    collectionId: string;
+    slug: string;
+    scheduled: boolean;
+    launchAt?: string | null;
+  }) => Promise<{ signature: string; message: string }>;
 };
 
 const Ctx = createContext<WalletState | null>(null);
@@ -528,6 +539,86 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const confirmPublishDrop = useCallback(
+    async (params: {
+      collectionName: string;
+      collectionId: string;
+      slug: string;
+      scheduled: boolean;
+      launchAt?: string | null;
+    }) => {
+      if (!sphereRef.current || !isSphereClientConnected(sphereRef.current.client)) {
+        throw new ApiError("Reconnect Sphere wallet to publish this drop", {
+          code: "UPAD_UNAUTHORIZED",
+          status: 401,
+        });
+      }
+      const handle = sphereRef.current;
+      const action = params.scheduled ? "schedule" : "publish";
+      const message = [
+        "Unipad drop publish",
+        "",
+        `Action: ${action}`,
+        `Drop: ${params.collectionName}`,
+        `Collection: ${params.collectionId}`,
+        `Slug: ${params.slug}`,
+        params.scheduled && params.launchAt
+          ? `Opens: ${params.launchAt}`
+          : "Opens: on publish",
+        `Domain: ${typeof window !== "undefined" ? window.location.host : "unipad"}`,
+        `Issued At: ${new Date().toISOString()}`,
+      ].join("\n");
+
+      let timer: number | undefined;
+      try {
+        const signPromise = handle.client.intent<{
+          signature?: string;
+          publicKey?: string;
+        }>(INTENT_ACTIONS.SIGN_MESSAGE, { message });
+
+        const timed = new Promise<never>((_, reject) => {
+          timer = window.setTimeout(() => {
+            reject(
+              new ApiError(
+                "Sphere did not show a publish confirmation. Keep the Sphere wallet window open (or install the Sphere extension), then try Publish again.",
+                { code: "UPAD_PAYMENT_TIMEOUT", status: 408 },
+              ),
+            );
+          }, SIGN_TIMEOUT_MS);
+        });
+
+        const signed = await Promise.race([signPromise, timed]);
+        const signature = signed?.signature;
+        if (!signature) {
+          throw new ApiError("Sphere did not return a publish signature", {
+            code: "UPAD_PAYMENT_FAILED",
+            status: 400,
+          });
+        }
+        return { signature, message };
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        const text = describePaymentError(err);
+        const lower = text.toLowerCase();
+        const code =
+          lower.includes("reject") || lower.includes("denied") || lower.includes("cancel")
+            ? "UPAD_PAYMENT_REJECTED"
+            : lower.includes("confirmation") || lower.includes("timeout")
+              ? "UPAD_PAYMENT_TIMEOUT"
+              : "UPAD_PAYMENT_FAILED";
+        throw new ApiError(
+          lower.includes("reject")
+            ? "Publish rejected in Sphere."
+            : text || "Could not confirm publish in Sphere",
+          { code, status: 400 },
+        );
+      } finally {
+        if (timer !== undefined) window.clearTimeout(timer);
+      }
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       token,
@@ -542,6 +633,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       payUct,
       resolveTransferRecipient,
       confirmNftTransfer,
+      confirmPublishDrop,
     }),
     [
       token,
@@ -556,6 +648,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       payUct,
       resolveTransferRecipient,
       confirmNftTransfer,
+      confirmPublishDrop,
     ],
   );
 

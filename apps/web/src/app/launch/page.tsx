@@ -24,6 +24,7 @@ import {
   type LaunchMode,
   type SchedulePreset,
 } from "@/lib/schedule";
+import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { fadeUp, springSnappy } from "@/lib/motion";
@@ -82,7 +83,8 @@ const STEP_HELP = [
 export default function LaunchPage() {
   const router = useRouter();
   const toast = useToast();
-  const { token, connectSphere, connecting } = useWallet();
+  const { token, connectSphere, connecting, ensureSphereForPayment, confirmPublishDrop } =
+    useWallet();
   const [step, setStep] = useState<Step>(0);
   const [submitting, setSubmitting] = useState(false);
 
@@ -330,34 +332,64 @@ export default function LaunchPage() {
 
   async function publish() {
     if (!createdId) return;
-    const t = sessionToken(token);
-    if (!t) return;
     const scheduled = Boolean(previewLaunchAt);
-    const ok = await toast.confirm({
-      title: scheduled ? "Schedule this drop?" : "Publish this drop?",
-      message: scheduled
-        ? `Minting opens ${formatLaunchAt(previewLaunchAt!)}. It will show as Upcoming until then.`
-        : "People will be able to mint as soon as you publish.",
-      confirmLabel: scheduled ? "Schedule" : "Publish now",
-      cancelLabel: "Not yet",
-    });
-    if (!ok) return;
+    const dropSlug = createdSlug || slug;
+
+    let sessionJwt: string | null = null;
+    try {
+      sessionJwt = await toast.confirmAndRun({
+        title: scheduled ? "Schedule this drop?" : "Publish this drop?",
+        message: scheduled
+          ? `Minting opens ${formatLaunchAt(previewLaunchAt!)}. Confirm in Sphere to schedule — keep the wallet window open.`
+          : "People will be able to mint as soon as you publish. Confirm in Sphere — keep the wallet window open.",
+        confirmLabel: "Confirm in Sphere",
+        cancelLabel: "Not yet",
+        run: () => {
+          try {
+            prepareSpherePaymentWindow();
+          } catch {
+            /* ensureSphereForPayment will surface a clear error */
+          }
+          toast.info(
+            "Confirm in Sphere",
+            "Approve publishing this drop in the Sphere wallet window (or extension).",
+          );
+          return (async () => {
+            const jwt = await ensureSphereForPayment();
+            await confirmPublishDrop({
+              collectionName: name,
+              collectionId: createdId,
+              slug: dropSlug,
+              scheduled,
+              launchAt: previewLaunchAt,
+            });
+            return jwt;
+          })();
+        },
+      });
+    } catch (e) {
+      toast.error(e);
+      return;
+    }
+    if (!sessionJwt) return;
 
     setSubmitting(true);
     try {
-      const published = await api.publishCollection(t, createdId);
+      const published = await api.publishCollection(sessionJwt, createdId);
       clearLaunchCheckpoint();
       stashPublishedDrop(published);
-      const slug = published.slug || createdSlug;
+      const nextSlug = published.slug || dropSlug;
       const bust = Date.now();
       if (published.status === "scheduled") {
         toast.success("Scheduled", `Minting opens ${formatLaunchAt(published.launchAt || previewLaunchAt!)}.`);
         router.push(
-          `/drops?view=upcoming&highlight=${encodeURIComponent(slug || "")}&_=${bust}`,
+          `/drops?view=upcoming&highlight=${encodeURIComponent(nextSlug || "")}&_=${bust}`,
         );
       } else {
         toast.success("It’s live!", "Your drop is open for minting.");
-        router.push(`/drops?view=live&highlight=${encodeURIComponent(slug || "")}&_=${bust}`);
+        router.push(
+          `/drops?view=live&highlight=${encodeURIComponent(nextSlug || "")}&_=${bust}`,
+        );
       }
       router.refresh();
     } catch (e) {

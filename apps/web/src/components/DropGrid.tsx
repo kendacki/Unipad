@@ -198,9 +198,6 @@ export function DropGrid({
                 Math.round((c.mintedCount / Math.max(1, c.totalSupply)) * 100),
               );
               const mintable = isMintable(c);
-              const highlighted =
-                Boolean(highlightSlug) &&
-                (c.slug.toLowerCase() === highlightSlug || c.id.toLowerCase() === highlightSlug);
               return (
                 <m.div
                   key={c.id}
@@ -208,7 +205,7 @@ export function DropGrid({
                   variants={cardItem}
                   whileHover={{ y: -6 }}
                   transition={springSnappy}
-                  className={highlighted ? "drop-tile-wrap is-highlight" : "drop-tile-wrap"}
+                  className="drop-tile-wrap"
                 >
                   <Link href={`/drops/${c.slug}`} className="drop-tile">
                     <div className="drop-media">
