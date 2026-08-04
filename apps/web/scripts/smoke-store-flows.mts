@@ -183,13 +183,14 @@ async function main() {
   }
   results.push("earnings record + payout ledger ok");
 
-  // cleanup smoke listing rows (best-effort)
+  // cleanup smoke listing + registry (best-effort)
   const paths = [
     `listings/collections/${published.id}.json`,
     `listings/slugs/${slug}.json`,
     `listings/creators/${encodeURIComponent(principal).slice(0, 120)}/${published.id}.json`,
     tokenPath,
     `mints/wallets/${encodeURIComponent(recipient).slice(0, 120)}/${published.id}-1.json`,
+    walletPath,
   ];
   for (const p of paths) {
     try {
@@ -198,9 +199,35 @@ async function main() {
       /* ignore */
     }
   }
-  // leave public-registry entry; next publish overwrites / list tolerates orphans
+  try {
+    const registryPath = "listings/public-registry.json";
+    const registry = (await getJson<{
+      updatedAt?: string;
+      byId?: Record<string, unknown>;
+    }>(registryPath)) || { byId: {} };
+    if (registry.byId?.[published.id]) {
+      delete registry.byId[published.id];
+      await putJson(registryPath, {
+        updatedAt: new Date().toISOString(),
+        byId: registry.byId,
+      });
+    }
+  } catch {
+    /* ignore */
+  }
 
-  console.log(JSON.stringify({ ok: true, store: "supabase", results }, null, 2));
+  // Remove smoke earnings rows for this principal (test-only principal).
+  try {
+    const { listPathnames } = await import("../src/lib/objectStore.ts");
+    const earnPrefix = `earnings/creators/${encodeURIComponent(principal).slice(0, 120)}/`;
+    for (const row of await listPathnames(earnPrefix)) {
+      await removeObject(row.pathname);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  console.log(JSON.stringify({ ok: true, store: "supabase", results, cleanedSlug: slug }, null, 2));
 }
 
 main().catch((e) => {
