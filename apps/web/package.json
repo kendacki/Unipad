@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
-    "@unicitylabs/sphere-sdk": "0.13.1",
+    "@unicitylabs/sphere-sdk": "0.14.3",
     "@unipad/shared": "workspace:*",
     "@vercel/blob": "^2.6.1",
     "framer-motion": "^12.43.0",

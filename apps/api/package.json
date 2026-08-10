@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.1",
-    "@unicitylabs/sphere-sdk": "0.13.1",
+    "@unicitylabs/sphere-sdk": "0.14.3",
     "@unipad/shared": "workspace:*",
     "dotenv": "^16.4.7",
     "hono": "^4.7.5",
