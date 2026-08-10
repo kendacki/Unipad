@@ -310,14 +310,16 @@ h3,
   grid-template-columns: 1fr;
   justify-items: end;
   align-items: center;
-  padding: 3.5rem 0;
+  padding: clamp(2rem, 4.5vh, 3.5rem) 0;
   width: min(1120px, calc(100% - 2rem));
+  min-height: calc(100vh - 4.25rem);
 }
 
 .hero-content {
   position: relative;
   z-index: 2;
   color: var(--black);
+  width: clamp(16rem, 46%, 34rem);
   max-width: 34rem;
   animation: riseIn 600ms var(--ease) both;
   justify-self: end;
@@ -2495,33 +2497,9 @@ h3,
   .feature-strip {
     grid-template-columns: 1fr;
   }
-  .hero-layout {
-    grid-template-columns: 1fr;
-    padding: 2.5rem 0 3rem;
-    justify-items: stretch;
-  }
-  .hero-content {
-    justify-self: stretch;
-    max-width: none;
-    padding-left: min(42%, 11rem);
-  }
   .hero-media img,
   .hero-media > span {
     object-position: left center;
-  }
-}
-
-@media (max-width: 480px) {
-  .hero-content {
-    padding-left: 0;
-    background: linear-gradient(
-      180deg,
-      transparent 0%,
-      rgba(255, 106, 0, 0.88) 28%,
-      #ff6a00 55%
-    );
-    padding-top: 4rem;
-    margin-top: 8rem;
   }
 }
 
