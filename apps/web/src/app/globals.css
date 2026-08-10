@@ -2486,10 +2486,15 @@ h3,
     grid-template-columns: 1fr;
   }
   .site-header-inner {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.65rem;
   }
   .nav {
-    display: none;
+    gap: clamp(0.55rem, 1.8vw, 1.1rem);
+    font-size: 0.85rem;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: center;
   }
   .header-actions {
     justify-self: end;
@@ -2500,6 +2505,16 @@ h3,
   .hero-media img,
   .hero-media > span {
     object-position: left center;
+  }
+}
+
+/* True mobile only — mid/tablet sizes keep header page links visible above */
+@media (max-width: 520px) {
+  .site-header-inner {
+    grid-template-columns: 1fr auto;
+  }
+  .nav {
+    display: none;
   }
 }
 
