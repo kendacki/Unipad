@@ -19,6 +19,7 @@ import {
   ListingHttpError,
   pickActivePhase,
 } from "@/lib/listingStore";
+import { getCatalogCollection } from "@/lib/catalog";
 import { recordMintSale } from "@/lib/earningsStore";
 import {
   getJson,
@@ -60,6 +61,58 @@ export type StoredToken = {
   mintedAt: string;
   idempotencyKey: string;
 };
+
+/**
+ * Prefer the collection’s current cover so minted NFTs pick up catalog/cover updates
+ * (e.g. Signal Genesis artwork refresh) without waiting for a one-off data rewrite.
+ */
+async function withLiveCollectionCover(token: StoredToken): Promise<StoredToken> {
+  const catalog =
+    getCatalogCollection(token.collectionId) || getCatalogCollection(token.slug);
+  if (catalog?.coverUrl && catalog.coverUrl !== token.coverUrl) {
+    return { ...token, coverUrl: catalog.coverUrl };
+  }
+  try {
+    const collection =
+      (await getResolvedCollection(token.collectionId)) ||
+      (await getResolvedCollection(token.slug));
+    if (collection?.coverUrl && collection.coverUrl !== token.coverUrl) {
+      return { ...token, coverUrl: collection.coverUrl };
+    }
+  } catch {
+    /* keep stored cover */
+  }
+  return token;
+}
+
+async function applyLiveCovers(tokens: StoredToken[]): Promise<StoredToken[]> {
+  const next = await Promise.all(tokens.map(withLiveCollectionCover));
+  // Best-effort: persist healed covers so wallet indexes stay in sync.
+  if (useBlob()) {
+    for (let i = 0; i < next.length; i++) {
+      const healed = next[i]!;
+      const prior = tokens[i]!;
+      if (healed.coverUrl === prior.coverUrl) continue;
+      try {
+        await putJson(tokenPath(healed.collectionId, healed.tokenId), healed, {
+          overwrite: true,
+        });
+        await putJson(
+          walletTokenPath(healed.ownerPrincipal, healed.collectionId, healed.tokenId),
+          healed,
+          { overwrite: true },
+        );
+      } catch {
+        /* display still uses healed cover from this response */
+      }
+    }
+  } else {
+    for (const healed of next) {
+      memory().tokens.set(`${healed.collectionId}:${healed.tokenId}`, healed);
+    }
+  }
+  return next;
+}
 
 type ReservationRow = {
   collectionId: string;
@@ -1037,9 +1090,11 @@ export async function listWalletTokens(
   const nametag = opts?.nametag?.trim() || null;
 
   if (!useBlob()) {
-    return dedupeTokens(
-      [...memory().tokens.values()].filter((t) =>
-        ownersMatch(t.ownerPrincipal, owner, nametag),
+    return applyLiveCovers(
+      dedupeTokens(
+        [...memory().tokens.values()].filter((t) =>
+          ownersMatch(t.ownerPrincipal, owner, nametag),
+        ),
       ),
     );
   }
@@ -1126,7 +1181,7 @@ export async function listWalletTokens(
     }
   }
 
-  return dedupeTokens(owned);
+  return applyLiveCovers(dedupeTokens(owned));
 }
 
 /**

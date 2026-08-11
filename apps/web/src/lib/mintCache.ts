@@ -11,7 +11,7 @@ export type CachedMint = {
   ownerPrincipal: string;
 };
 
-const CACHE_KEY = "unipad.mints.cache.v1";
+const CACHE_KEY = "unipad.mints.cache.v2";
 
 function readAll(): CachedMint[] {
   if (typeof window === "undefined") return [];
