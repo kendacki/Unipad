@@ -25,6 +25,7 @@ import {
   type SchedulePreset,
 } from "@/lib/schedule";
 import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
+import { isDisplayableCoverUrl, normalizeCoverUrl } from "@/lib/media";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
 import { fadeUp, springSnappy } from "@/lib/motion";
@@ -187,7 +188,16 @@ export default function LaunchPage() {
     }
   }, [launchMode, schedulePreset, customDate, customHour, customMinute]);
 
-  const resolvedCoverUrl = coverLink.trim() || coverUploadUrl;
+  const resolvedCoverUrl = (() => {
+    const fromLink = coverLink.trim();
+    if (fromLink) {
+      const normalized = normalizeCoverUrl(fromLink);
+      if (normalized && isDisplayableCoverUrl(normalized)) return normalized;
+    }
+    // Prefer the uploaded file URL when the link field is empty or not a real image.
+    if (coverUploadUrl && isDisplayableCoverUrl(coverUploadUrl)) return coverUploadUrl;
+    return "";
+  })();
 
   async function onCoverFile(file: File | null) {
     if (!file) return;
@@ -241,6 +251,12 @@ export default function LaunchPage() {
     }
     if (hasAllowlist && !allowlistText.trim()) {
       toast.error(new Error("Add at least one wallet or @nametag to the guest list."));
+      return;
+    }
+    if (coverLink.trim() && !resolvedCoverUrl) {
+      toast.error(
+        new Error("Cover link must be a direct image URL (PNG/JPG/WebP), or upload a file instead."),
+      );
       return;
     }
 
@@ -531,13 +547,16 @@ export default function LaunchPage() {
                   <input
                     value={coverLink}
                     onChange={(e) => {
-                      setCoverLink(e.target.value);
-                      if (e.target.value.trim()) {
+                      const next = e.target.value;
+                      setCoverLink(next);
+                      const normalized = normalizeCoverUrl(next);
+                      // Only replace an uploaded cover when the pasted link is a real image URL.
+                      if (normalized && isDisplayableCoverUrl(normalized)) {
                         setCoverUploadUrl("");
                         setCoverFileName("");
                       }
                     }}
-                    placeholder="https://…"
+                    placeholder="https://… (direct image URL)"
                   />
                 </label>
                 <label>

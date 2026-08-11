@@ -12,12 +12,18 @@ import {
   type PhaseType,
 } from "@unipad/shared";
 import { getCatalogCollection, listCatalogCollections } from "@/lib/catalog";
+import { isDisplayableCoverUrl, normalizeCoverUrl } from "@/lib/media";
 import {
   getJson,
   isPersistentStoreConfigured,
   listJsonUnder,
   putJson,
 } from "@/lib/objectStore";
+
+function normalizeStoredCoverUrl(raw: string | null | undefined): string | null {
+  const normalized = normalizeCoverUrl(raw);
+  return normalized && isDisplayableCoverUrl(normalized) ? normalized : null;
+}
 
 export type AllowlistRow = {
   phaseId: string;
@@ -349,7 +355,7 @@ export async function createListing(
     creatorPrincipal: normalizePrincipalKey(principal),
     creatorDisplayName:
       input.creatorDisplayName?.trim().slice(0, 80) || creatorDisplayName(principal),
-    coverUrl: input.coverUrl?.trim() || null,
+    coverUrl: normalizeStoredCoverUrl(input.coverUrl),
     status: "draft",
     totalSupply: input.totalSupply,
     mintedCount: 0,
@@ -606,7 +612,7 @@ export async function publishListing(principal: string, idOrSlug: string): Promi
     name: listing.name.trim(),
     description: listing.description?.trim() || "",
     creatorDisplayName: listing.creatorDisplayName?.trim() || creatorDisplayName(listing.creatorPrincipal),
-    coverUrl: listing.coverUrl?.trim() || null,
+    coverUrl: normalizeStoredCoverUrl(listing.coverUrl),
     launchAt,
     status,
     phases,

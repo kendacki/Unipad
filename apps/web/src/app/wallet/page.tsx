@@ -13,7 +13,7 @@ import {
 import { prepareSpherePaymentWindow } from "@/lib/sphereConnect";
 import { useToast } from "@/lib/toast";
 import { useWallet } from "@/lib/wallet";
-import { DROP_COVER_FALLBACKS } from "@/lib/media";
+import { DROP_COVER_FALLBACKS, resolveCoverUrl } from "@/lib/media";
 import { fadeUp, springSnappy } from "@/lib/motion";
 
 type TokenRow = {
@@ -395,8 +395,10 @@ export default function WalletPage() {
             {tokens.map((t) => {
               const key = `${t.collectionId}:${t.tokenId}`;
               const busy = sendingKey === key;
-              const cover =
-                t.coverUrl || DROP_COVER_FALLBACKS[t.tokenId % DROP_COVER_FALLBACKS.length];
+              const cover = resolveCoverUrl(
+                t.coverUrl,
+                DROP_COVER_FALLBACKS[t.tokenId % DROP_COVER_FALLBACKS.length],
+              );
               return (
                 <article key={key} className="mint-card-owned">
                   <Link href={`/drops/${t.slug}`} className="mint-card-media">
