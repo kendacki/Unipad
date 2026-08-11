@@ -27,7 +27,7 @@ const SEED: SeedDrop[] = [
     creatorName: "North Signal Studio",
     priceUct: "1",
     supply: 100,
-    coverUrl: cover("1699524826369-57870e627c43"),
+    coverUrl: "/covers/signal-genesis.png",
     trending: true,
   },
   {

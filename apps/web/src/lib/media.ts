@@ -42,11 +42,16 @@ const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|avif|svg)(\?|#|$)/i;
 
 /**
  * Unwrap pasted Google/search/wrapper URLs to a direct image HTTPS URL when possible.
- * Keeps already-direct Supabase / Blob / Unsplash / CDN image links intact.
+ * Keeps already-direct Supabase / Blob / Unsplash / CDN / local public image links intact.
  */
 export function normalizeCoverUrl(raw: string | null | undefined): string | null {
   const trimmed = raw?.trim();
   if (!trimmed) return null;
+
+  // Same-origin public assets (e.g. /covers/signal-genesis.png)
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    return IMAGE_EXT_RE.test(trimmed) || trimmed.startsWith("/covers/") ? trimmed : null;
+  }
 
   let candidate = trimmed;
   try {
@@ -107,6 +112,7 @@ export function normalizeCoverUrl(raw: string | null | undefined): string | null
 export function isDisplayableCoverUrl(url: string | null | undefined): boolean {
   const normalized = normalizeCoverUrl(url);
   if (!normalized) return false;
+  if (normalized.startsWith("/")) return true;
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.toLowerCase();
