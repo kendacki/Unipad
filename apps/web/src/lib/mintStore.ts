@@ -8,6 +8,7 @@ import {
   DEFAULT_TREASURY_PRINCIPAL,
   UCT_COIN_ID,
   normalizeSphereRecipient,
+  splitMintProceeds,
   type Collection,
   type MintIntentResponse,
   type MintResult,
@@ -20,7 +21,7 @@ import {
   pickActivePhase,
 } from "@/lib/listingStore";
 import { getCatalogCollection } from "@/lib/catalog";
-import { recordMintSale } from "@/lib/earningsStore";
+import { platformFeeBps, recordMintSale } from "@/lib/earningsStore";
 import {
   getJson,
   isPersistentStoreConfigured,
@@ -259,6 +260,49 @@ function treasuryPrincipal(): string {
   return normalizeSphereRecipient(
     process.env.TREASURY_PRINCIPAL?.trim() || DEFAULT_TREASURY_PRINCIPAL,
   );
+}
+
+/**
+ * Live seller listings pay the seller’s wallet (pubkey) or explicit @nametag.
+ * Catalog / mock seeds stay on the treasury path (full price → @cryptzarr).
+ */
+function sellerPaymentRecipient(collection: Collection): string | null {
+  const principal = collection.creatorPrincipal?.trim() || "";
+  if (!principal || principal.startsWith("mock_")) return null;
+  if (getCatalogCollection(collection.id) || getCatalogCollection(collection.slug)) {
+    return null;
+  }
+
+  const display = collection.creatorDisplayName?.trim() || "";
+  if (display.startsWith("@")) {
+    try {
+      return normalizeSphereRecipient(display);
+    } catch {
+      /* fall through to pubkey */
+    }
+  }
+
+  if (/^[0-9a-f]{66}$/i.test(principal)) {
+    return principal.toLowerCase();
+  }
+  return null;
+}
+
+/** Encode seller + optional platform-fee payment refs for submitMint. */
+export function encodeMintPaymentRef(sellerRef: string, feeRef?: string | null): string {
+  if (!feeRef) return sellerRef;
+  return `${sellerRef}||fee:${feeRef}`;
+}
+
+export function parseMintPaymentRef(paymentRef: string): { primary: string; fee?: string } {
+  const idx = paymentRef.indexOf("||fee:");
+  if (idx > 0) {
+    return {
+      primary: paymentRef.slice(0, idx),
+      fee: paymentRef.slice(idx + "||fee:".length),
+    };
+  }
+  return { primary: paymentRef };
 }
 
 function uctCoinIdHex(): string {
@@ -520,6 +564,17 @@ async function markPayment(paymentRef: string, idempotencyKey: string) {
     );
   } catch {
     throw new MintHttpError("paymentRef already used", 409, "UPAD_PAYMENT_USED");
+  }
+}
+
+async function markMintPayments(
+  primaryPaymentRef: string,
+  feePaymentRef: string | undefined,
+  idempotencyKey: string,
+) {
+  await markPayment(primaryPaymentRef, idempotencyKey);
+  if (feePaymentRef) {
+    await markPayment(feePaymentRef, idempotencyKey);
   }
 }
 
@@ -801,6 +856,40 @@ export async function createMintIntent(
     throw err;
   }
 
+  const coinIdHex = uctCoinIdHex();
+  const seller = sellerPaymentRecipient(collection);
+  const split = splitMintProceeds(phase.priceUct, platformFeeBps());
+
+  // Live seller listing: net → seller wallet/username, fee % → @cryptzarr (treasury).
+  if (seller && BigInt(split.creatorNetUct) > 0n) {
+    const response: MintIntentResponse = {
+      idempotencyKey,
+      collectionId: collection.id,
+      phaseId: phase.id,
+      priceUct: phase.priceUct,
+      payment: {
+        coinId: "UCT",
+        coinIdHex,
+        amount: split.creatorNetUct,
+        recipient: seller,
+        memo: paymentMemo,
+      },
+      expiresAt,
+      nonce: nanoid(16),
+    };
+    if (BigInt(split.platformFeeUct) > 0n) {
+      response.feePayment = {
+        coinId: "UCT",
+        coinIdHex,
+        amount: split.platformFeeUct,
+        recipient: treasuryPrincipal(),
+        memo: `${paymentMemo}:fee`,
+      };
+    }
+    return response;
+  }
+
+  // Catalog / seed / unresolved seller: full price → treasury (unchanged).
   return {
     idempotencyKey,
     collectionId: collection.id,
@@ -808,7 +897,7 @@ export async function createMintIntent(
     priceUct: phase.priceUct,
     payment: {
       coinId: "UCT",
-      coinIdHex: uctCoinIdHex(),
+      coinIdHex,
       amount: phase.priceUct,
       recipient: treasuryPrincipal(),
       memo: paymentMemo,
@@ -837,6 +926,7 @@ export async function submitMint(params: {
     try {
       const collection = await getResolvedCollection(intent.collectionId);
       if (collection) {
+        const seller = sellerPaymentRecipient(collection);
         await recordMintSale({
           creatorPrincipal: collection.creatorPrincipal,
           collectionId: collection.id,
@@ -845,6 +935,8 @@ export async function submitMint(params: {
           grossUct: intent.priceUct,
           buyerPrincipal: walletPrincipal,
           tokenId: intent.tokenId,
+          settledDirect: Boolean(seller),
+          settledRecipient: seller,
         });
       }
     } catch {
@@ -882,15 +974,26 @@ export async function submitMint(params: {
     throw new MintHttpError("paymentRef required", 400, "UPAD_PAYMENT_REQUIRED");
   }
 
+  const { primary: primaryPaymentRef, fee: feePaymentRef } = parseMintPaymentRef(paymentRef);
+
   const allowMock = process.env.UNIPAD_DEV_MOCK === "true";
-  if (paymentRef.startsWith("mock-uct:") && !allowMock) {
+  if (primaryPaymentRef.startsWith("mock-uct:") && !allowMock) {
     throw new MintHttpError("Mock payments disabled", 400, "UPAD_PAYMENT_MISMATCH");
   }
-  if (paymentRef.startsWith("mock-uct:") && !paymentRef.includes(intent.paymentMemo)) {
+  if (primaryPaymentRef.startsWith("mock-uct:") && !primaryPaymentRef.includes(intent.paymentMemo)) {
     throw new MintHttpError("Payment memo mismatch", 400, "UPAD_PAYMENT_MISMATCH");
   }
-  if (paymentRef.startsWith("sphere-pending:") && !paymentRef.includes(intent.paymentMemo)) {
+  if (
+    primaryPaymentRef.startsWith("sphere-pending:") &&
+    !primaryPaymentRef.includes(intent.paymentMemo)
+  ) {
     throw new MintHttpError("Payment memo mismatch", 400, "UPAD_PAYMENT_MISMATCH");
+  }
+  if (
+    feePaymentRef?.startsWith("sphere-pending:") &&
+    !feePaymentRef.includes(intent.paymentMemo)
+  ) {
+    throw new MintHttpError("Fee payment memo mismatch", 400, "UPAD_PAYMENT_MISMATCH");
   }
 
   const requested = await getResolvedCollection(collectionIdOrSlug);
@@ -905,7 +1008,7 @@ export async function submitMint(params: {
     throw new MintHttpError("Collection not found", 404, "UPAD_NOT_FOUND");
   }
 
-  if (await paymentUsed(paymentRef)) {
+  if (await paymentUsed(primaryPaymentRef)) {
     const existingIntent = intent.paymentRef === paymentRef ? intent : null;
     if (existingIntent?.status === "confirmed" && existingIntent.tokenId != null) {
       return {
@@ -916,6 +1019,9 @@ export async function submitMint(params: {
       };
     }
     throw new MintHttpError("paymentRef already used", 409, "UPAD_PAYMENT_USED");
+  }
+  if (feePaymentRef && (await paymentUsed(feePaymentRef))) {
+    throw new MintHttpError("fee paymentRef already used", 409, "UPAD_PAYMENT_USED");
   }
 
   const phase =
@@ -941,7 +1047,7 @@ export async function submitMint(params: {
       await releaseReservation(intent.collectionId, intent.reservedTokenId, idempotencyKey);
     }
     try {
-      await markPayment(paymentRef, idempotencyKey);
+      await markMintPayments(primaryPaymentRef, feePaymentRef, idempotencyKey);
     } catch {
       /* already tracked */
     }
@@ -976,7 +1082,7 @@ export async function submitMint(params: {
   if (reservedTokenId == null) {
     // Paid but no supply left — automatic refund path.
     try {
-      await markPayment(paymentRef, idempotencyKey);
+      await markMintPayments(primaryPaymentRef, feePaymentRef, idempotencyKey);
     } catch {
       /* already tracked */
     }
@@ -1005,7 +1111,7 @@ export async function submitMint(params: {
   };
 
   try {
-    await markPayment(paymentRef, idempotencyKey);
+    await markMintPayments(primaryPaymentRef, feePaymentRef, idempotencyKey);
   } catch (err) {
     if (err instanceof MintHttpError && err.code === "UPAD_PAYMENT_USED") throw err;
     throw err;
@@ -1033,6 +1139,7 @@ export async function submitMint(params: {
   await releaseReservation(intent.collectionId, reservedTokenId, idempotencyKey);
 
   try {
+    const seller = sellerPaymentRecipient(collectionBase);
     await recordMintSale({
       creatorPrincipal: collectionBase.creatorPrincipal,
       collectionId: collectionBase.id,
@@ -1041,6 +1148,9 @@ export async function submitMint(params: {
       grossUct: intent.priceUct,
       buyerPrincipal: walletPrincipal,
       tokenId: token.tokenId,
+      /** Live seller listings already received UCT on-chain — don't double-credit Balance. */
+      settledDirect: Boolean(seller),
+      settledRecipient: seller,
     });
   } catch (err) {
     // Mint already settled — surface in logs so silent ledger gaps are visible.

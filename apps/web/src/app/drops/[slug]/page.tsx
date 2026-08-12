@@ -227,7 +227,9 @@ export default function DropDetailPage() {
       paymentRef = await toast.confirmAndRun({
         title: `Mint for ${priceLabel}?`,
         message:
-          "Tap Pay to open Sphere and approve the UCT transfer. Keep the Sphere wallet window open until you confirm.",
+          nextIntent.feePayment && BigInt(nextIntent.feePayment.amount) > 0n
+            ? "Tap Pay to open Sphere. You’ll approve the seller payment, then the platform fee. Keep the Sphere wallet window open until both are confirmed."
+            : "Tap Pay to open Sphere and approve the UCT transfer. Keep the Sphere wallet window open until you confirm.",
         confirmLabel: "Pay with Sphere",
         cancelLabel: "Cancel",
         run: () => {
@@ -244,12 +246,27 @@ export default function DropDetailPage() {
           );
           return (async () => {
             await ensureSphereForPayment();
-            return payUct({
+            const sellerRef = await payUct({
               recipient: nextIntent.payment.recipient,
               amount: nextIntent.payment.amount,
               memo: nextIntent.payment.memo,
               coinIdHex: nextIntent.payment.coinIdHex,
             });
+            // Live seller listings: platform fee % → @cryptzarr (treasury).
+            if (nextIntent.feePayment && BigInt(nextIntent.feePayment.amount) > 0n) {
+              toast.info(
+                "Approve platform fee in Sphere",
+                "Confirm the fee transfer to finish minting.",
+              );
+              const feeRef = await payUct({
+                recipient: nextIntent.feePayment.recipient,
+                amount: nextIntent.feePayment.amount,
+                memo: nextIntent.feePayment.memo,
+                coinIdHex: nextIntent.feePayment.coinIdHex,
+              });
+              return `${sellerRef}||fee:${feeRef}`;
+            }
+            return sellerRef;
           })();
         },
       });

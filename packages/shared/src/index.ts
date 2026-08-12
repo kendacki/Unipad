@@ -61,6 +61,17 @@ export interface MintIntentResponse {
     recipient: string;
     memo: string;
   };
+  /**
+   * Platform fee leg for live seller listings (paid to treasury / @cryptzarr).
+   * Omitted for catalog/seed drops where the full price goes to treasury.
+   */
+  feePayment?: {
+    coinId: "UCT";
+    coinIdHex: string;
+    amount: string;
+    recipient: string;
+    memo: string;
+  };
   expiresAt: string;
   nonce: string;
 }

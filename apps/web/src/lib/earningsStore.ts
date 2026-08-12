@@ -158,6 +158,9 @@ export async function recordMintSale(input: {
   grossUct: string;
   buyerPrincipal: string;
   tokenId: number;
+  /** True when buyer already sent seller net (+ fee to treasury) on-chain. */
+  settledDirect?: boolean;
+  settledRecipient?: string | null;
 }): Promise<StoredSale | null> {
   const creator = normalizeOwnerKey(input.creatorPrincipal);
   const buyer = normalizeOwnerKey(input.buyerPrincipal);
@@ -170,6 +173,7 @@ export async function recordMintSale(input: {
 
   const split = splitMintProceeds(input.grossUct, platformFeeBps());
   const id = `earn-${nanoid(14)}`;
+  const direct = Boolean(input.settledDirect);
   const sale: StoredSale = {
     id,
     saleId: input.saleId,
@@ -178,8 +182,13 @@ export async function recordMintSale(input: {
     grossUct: split.grossUct,
     platformFeeUct: split.platformFeeUct,
     creatorNetUct: split.creatorNetUct,
-    payoutStatus: "accrued",
+    // Direct on-chain settlement → mark paid so Earnings Balance is not double-credited.
+    payoutStatus: direct ? "paid" : "accrued",
     createdAt: new Date().toISOString(),
+    paidAt: direct ? new Date().toISOString() : undefined,
+    payoutRecipient: direct
+      ? input.settledRecipient || "direct-settlement"
+      : undefined,
     creatorPrincipal: creator,
     buyerPrincipal: buyer,
     tokenId: input.tokenId,
