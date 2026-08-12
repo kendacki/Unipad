@@ -33,7 +33,7 @@ export default function HomePage() {
               </Link>
             </div>
           </SectionReveal>
-          <DropGrid limit={3} defaultFilter="mintable" />
+          <DropGrid limit={4} defaultFilter="mintable" />
         </div>
       </section>
 
