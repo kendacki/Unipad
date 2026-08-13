@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { AnimatePresence, m } from "framer-motion";
 import type { Collection } from "@unipad/shared";
 import { api } from "@/lib/api";
-import { DROP_COVER_FALLBACKS, isOptimizableCoverUrl, resolveCoverUrl } from "@/lib/media";
+import { isOptimizableCoverUrl, resolveCoverUrl, stableCoverFallback } from "@/lib/media";
 import {
   dropPriceLabel,
   isMintable,
@@ -29,9 +29,9 @@ function landscapeCover(url: string) {
   return `${base}?auto=format&fit=crop&w=1600&h=900&q=85`;
 }
 
-function coverFor(c: Collection, index: number) {
+function coverFor(c: Collection) {
   return landscapeCover(
-    resolveCoverUrl(c.coverUrl, DROP_COVER_FALLBACKS[index % DROP_COVER_FALLBACKS.length]),
+    resolveCoverUrl(c.coverUrl, stableCoverFallback(c.id || c.slug)),
   );
 }
 
@@ -159,13 +159,13 @@ export function DropsListing() {
                   >
                     <div className="featured-drop-media">
                       <Image
-                        src={coverFor(drop, i)}
+                        src={coverFor(drop)}
                         alt=""
                         fill
                         priority={i === 0}
                         sizes="(max-width: 860px) 100vw, 640px"
                         style={{ objectFit: "cover", objectPosition: "center" }}
-                        unoptimized={!isOptimizableCoverUrl(coverFor(drop, i))}
+                        unoptimized={!isOptimizableCoverUrl(coverFor(drop))}
                       />
                     </div>
 

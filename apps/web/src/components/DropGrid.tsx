@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, m } from "framer-motion";
 import type { Collection } from "@unipad/shared";
 import { api } from "@/lib/api";
-import { DROP_COVER_FALLBACKS, isOptimizableCoverUrl, resolveCoverUrl } from "@/lib/media";
+import { isOptimizableCoverUrl, resolveCoverUrl, stableCoverFallback } from "@/lib/media";
 import {
   dropPriceLabel,
   isMintable,
@@ -194,7 +194,7 @@ export function DropGrid({
             {visible.map((c, i) => {
               const cover = resolveCoverUrl(
                 c.coverUrl,
-                DROP_COVER_FALLBACKS[i % DROP_COVER_FALLBACKS.length],
+                stableCoverFallback(c.id || c.slug),
               );
               const mintedPct = Math.min(
                 100,

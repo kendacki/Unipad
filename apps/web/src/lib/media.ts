@@ -151,3 +151,20 @@ export function resolveCoverUrl(
   if (normalized && isDisplayableCoverUrl(normalized)) return normalized;
   return fallback;
 }
+
+/**
+ * Stable cover when a listing has no uploaded image.
+ * Uses the collection id/slug so the art does not jump when grid order changes.
+ */
+export function stableCoverFallback(seed: string | null | undefined): string {
+  const key = (seed || "unipad").trim().toLowerCase() || "unipad";
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const idx = DROP_COVER_FALLBACKS.length
+    ? hash % DROP_COVER_FALLBACKS.length
+    : 0;
+  return DROP_COVER_FALLBACKS[idx]!;
+}
